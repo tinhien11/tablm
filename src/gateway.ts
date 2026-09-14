@@ -56,36 +56,36 @@ function toolProtocol(tools: any[]): string {
   const exampleTool = tools[0]?.name ?? "ToolName";
   const secondTool = tools[1]?.name ?? "ToolName2";
   return [
-    "[Tool use protocol]",
-    "IMPORTANT: This is a TEXT GENERATION task, not a tool-use task. You do NOT have built-in tools. You must output TEXT in a specific format that an external parser reads.",
+    "[Output format]",
+    "You are a JSON API. You output ONLY JSON code blocks. No prose, no explanations.",
     "",
-    "To call a tool, output EXACTLY this fenced text block and NOTHING ELSE after it:",
-    "```tooluse",
+    "To perform an action, output a JSON code block with this EXACT format:",
+    "```json",
     `{"name": "${exampleTool}", "input": { ... }}`,
     "```",
     "",
-    "CRITICAL RULES:",
-    "1. DO NOT describe what you will do. DO NOT say \"I'll use\", \"I will\", \"let me\", \"I can't\", \"Work mode\", \"Cloud Browser\". Just output the ```tooluse``` block directly.",
-    "2. DO NOT explain the tool call in prose. The block IS the call.",
-    "3. To call multiple tools at once, output multiple ```tooluse``` blocks.",
-    "4. The system runs the tool and replies with [tool_result ...]. Do NOT output [tool_result ...] yourself.",
-    "5. If no tool is needed, just answer directly without any tool block.",
-    "6. You are NOT ChatGPT with built-in tools. You are a text generator. Output the block.",
+    "RULES:",
+    "1. Output the JSON block IMMEDIATELY. No preamble like \"I'll\", \"I will\", \"let me\".",
+    "2. The block IS the action. Do NOT describe it. Do NOT explain it.",
+    "3. Multiple actions = multiple JSON blocks in one response.",
+    "4. Do NOT say \"I can't\", \"Work mode\", \"Cloud Browser\", or \"unable to\". Just output JSON.",
+    "5. If no action needed, answer the question directly in prose.",
+    "6. You are NOT ChatGPT with built-in tools. You are a JSON text generator.",
     "",
-    "EXAMPLE - User says \"list files\":",
-    "```tooluse",
+    "EXAMPLE - User: \"list files\"",
+    "```json",
     `{"name": "${exampleTool}", "input": {"command": "ls -la"}}`,
     "```",
     "",
-    "EXAMPLE - User says \"read config and search web\":",
-    "```tooluse",
+    "EXAMPLE - User: \"read config and search\"",
+    "```json",
     `{"name": "${secondTool}", "input": {"file_path": "config.json"}}`,
     "```",
-    "```tooluse",
-    `{"name": "${exampleTool}", "input": {"query": "config documentation"}}`,
+    "```json",
+    `{"name": "${exampleTool}", "input": {"query": "config docs"}}`,
     "```",
     "",
-    "Available tools: " + tools.slice(0, 30).map((t: any) => t.name).join(", "),
+    "Available actions: " + tools.slice(0, 30).map((t: any) => t.name).join(", "),
   ].join("\n");
 }
 
@@ -154,6 +154,7 @@ function extractJsonObject(text: string, from: number): string | null {
 
 function parseToolCalls(text: string): { calls: ToolCall[]; cleanText: string } {
   const calls: ToolCall[] = [];
+  // Match ```tooluse blocks (z.ai style)
   const re = /```tooluse\s*\n?([\s\S]*?)```/g;
   let first = -1;
   let m: RegExpExecArray | null;
@@ -166,8 +167,21 @@ function parseToolCalls(text: string): { calls: ToolCall[]; cleanText: string } 
       }
     } catch {}
   }
+  // Also match ```json blocks that contain {"name": "...", "input": ...} (ChatGPT style)
   if (!calls.length) {
-    const marker = text.search(/```tooluse|(^|\n)\s*tooluse\s*\n/);
+    const jsonRe = /```json\s*\n?([\s\S]*?)```/g;
+    while ((m = jsonRe.exec(text)) !== null) {
+      try {
+        const parsed = JSON.parse(m[1].trim());
+        if (parsed && typeof parsed.name === "string" && typeof parsed.input === "object") {
+          if (first < 0) first = m.index;
+          calls.push({ name: parsed.name, input: parsed.input ?? {} });
+        }
+      } catch {}
+    }
+  }
+  if (!calls.length) {
+    const marker = text.search(/```tooluse|```json|(^|\n)\s*tooluse\s*\n/);
     if (marker >= 0) {
       const obj = extractJsonObject(text, marker);
       if (obj) {
@@ -180,7 +194,7 @@ function parseToolCalls(text: string): { calls: ToolCall[]; cleanText: string } 
       }
     }
   }
-  const cutMarkers = [text.indexOf("```tooluse"), text.indexOf("tooluse\n{"), text.indexOf("tooluse {")].filter((i) => i >= 0);
+  const cutMarkers = [text.indexOf("```tooluse"), text.indexOf("```json"), text.indexOf("tooluse\n{"), text.indexOf("tooluse {")].filter((i) => i >= 0);
   const cleanText = calls.length ? text.slice(0, Math.min(...cutMarkers)).trim() : text.trim();
   return { calls, cleanText };
 }
@@ -253,7 +267,7 @@ async function askWithMalformedRetry(
   const hasTooluseFence = /```tooluse/i.test(result.text);
   const hallucinatingResult = /\[tool_result\s/i.test(result.text);
   // Detect ChatGPT-style refusal: describes action instead of calling tool
-  const refusesToCall = /\b(I[''']ll (use|try|open|navigate|click|send)|I will (use|try|open|navigate|click|send)|let me (use|try|open|navigate|click|send)|I can[''']t|cannot |unable to |Work mode|Cloud Browser|switch to)\b/i.test(result.text);
+  const refusesToCall = /\b(I[''']ll (use|try|open|navigate|click|send)|I will (use|try|open|navigate|click|send)|let me (use|try|open|navigate|click|send)|I can[''']t|cannot |unable to |Work mode|Cloud Browser|switch to|I don't have (access|the ability)|I'm unable)\b/i.test(result.text);
   if (!hasTooluseFence && !hallucinatingResult && !refusesToCall) return result;
   if (!hasTooluseFence && !hallucinatingResult) {
     // Pure prose refusal — retry with stronger correction
