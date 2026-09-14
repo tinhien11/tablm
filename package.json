@@ -1,0 +1,26 @@
+{
+  "name": "web2model",
+  "version": "0.1.0",
+  "description": "Expose web AI chats (ChatGPT, Kimi, ...) as MCP tools for Claude via Chrome DevTools Protocol",
+  "type": "module",
+  "bin": {
+    "web2model": "dist/index.js",
+    "web2model-gateway": "dist/gateway.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "gateway": "node dist/gateway.js",
+    "test": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "chrome-remote-interface": "^0.33.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/chrome-remote-interface": "^0.31.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

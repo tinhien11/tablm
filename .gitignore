@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.diag*.mjs
+.test-*.mjs
+.zai-*.mjs
+.think-*.mjs
+.dt-*.mjs
+.DS_Store
