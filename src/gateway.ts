@@ -66,11 +66,11 @@ function buildFullPrompt(body: any): string {
     if (s.length > MAX_SYSTEM_CHARS) s = s.slice(0, MAX_SYSTEM_CHARS) + "\n[...system truncated...]";
     if (s.trim()) parts.push(`[System instructions]\n${s}`);
   }
+  const msgs = formatMessages(body.messages ?? []);
+  if (msgs) parts.push(msgs);
   if (Array.isArray(body.tools) && body.tools.length) {
     parts.push(`[Tool use protocol]\n${toolProtocol(body.tools)}`);
   }
-  const msgs = formatMessages(body.messages ?? []);
-  if (msgs) parts.push(msgs);
   parts.push("Assistant:\n");
   let prompt = parts.join("\n\n");
   if (prompt.length > MAX_PROMPT_CHARS) {
@@ -171,6 +171,9 @@ function buildPrompt(body: any, key: string): { prompt: string; mode: "delta" | 
           lastMessages.set(key, { sigs, protocolSent: true });
           console.log(`[gateway] ${key} tool protocol injected (delta, first time for this web conversation)`);
           return { prompt: text, mode: "delta" };
+        }
+        if (hasTools) {
+          text += "\n\n[Tool reminder] Tools are available. To call one, output exactly a ```tooluse {\"name\":\"ToolName\",\"input\":{...}}``` block and nothing after it; the result arrives as [tool_result ...]. If no tool is needed, just answer.";
         }
         lastMessages.set(key, { sigs, protocolSent: prev.protocolSent });
         return { prompt: text, mode: "delta" };
