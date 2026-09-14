@@ -51,7 +51,7 @@ mkdir -p "$BIN_DIR" "$APP_DIR" "$HOME/.config/autostart"
 rm -f "$BIN_DIR/w2m-chrome" "$APP_DIR/tablm.desktop" "$HOME/.config/autostart/tablm-chrome.desktop"
 cat > "$BIN_DIR/w2m-gateway" <<EOF
 #!/usr/bin/env bash
-exec node "$DIR/dist/gateway.js" "\$@"
+exec node "$DIR/dist/gateway.js" "$@" >> "$HOME/.web2model/gateway.log" 2>&1
 EOF
 chmod 755 "$BIN_DIR/w2m-gateway"
 cat > "$BIN_DIR/w2m-claude" <<EOF
@@ -62,6 +62,24 @@ export ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-web-chatgpt}"
 exec claude "\$@"
 EOF
 chmod 755 "$BIN_DIR/w2m-claude"
+cat > "$BIN_DIR/tablm-status" <<'EOF'
+#!/usr/bin/env bash
+echo "== gateway =="
+curl -s --max-time 3 http://127.0.0.1:8788/health || echo "gateway DOWN (start: w2m-gateway &)"
+echo
+echo "== chrome (CDP :9222) =="
+curl -s --max-time 3 http://127.0.0.1:9222/json/version >/dev/null 2>&1 && echo "up" || echo "not running (auto-launches on first ask)"
+echo
+echo "== site tabs =="
+node -e 'fetch("http://127.0.0.1:9222/json").then(r=>r.json()).then(t=>t.filter(x=>x.type==="page").forEach(x=>console.log(" "+x.url.slice(0,80)))).catch(()=>console.log(" (chrome not running)"))'
+EOF
+chmod 755 "$BIN_DIR/tablm-status"
+cat > "$BIN_DIR/tablm-logs" <<EOF
+#!/usr/bin/env bash
+mkdir -p "$HOME/.web2model"
+tail -n 50 -f "$HOME/.web2model/gateway.log"
+EOF
+chmod 755 "$BIN_DIR/tablm-logs"
 cat > "$HOME/.config/autostart/tablm-gateway.desktop" <<EOF
 [Desktop Entry]
 Type=Application
@@ -83,8 +101,20 @@ if [ "$CHROME_OK" = "0" ]; then
 fi
 
 echo
-echo "Done. Everything is automatic now:"
-echo "  - gateway autostarts at login (Chrome auto-opens on first ask)"
-echo "  - start Claude Code on the web model:  w2m-claude"
-echo "  - model ids: web-chatgpt, web-zai, web-kimi"
-echo "  - first run: sign in to the sites you want in the Chrome window that opens"
+echo "============================================================"
+echo " tablm installed. Next steps:"
+echo
+echo "   1. Run:            w2m-claude"
+echo "      (a Chrome window opens on first use - sign in to"
+echo "       chatgpt.com / chat.z.ai / kimi.ai once, cookies persist)"
+echo
+echo "   2. Model ids:      web-chatgpt | web-zai | web-kimi"
+echo "      switch with:    w2m-claude --model web-zai"
+echo
+echo "   Useful commands:"
+echo "     tablm-status    gateway + Chrome + sites health"
+echo "     tablm-logs      tail the gateway log"
+echo "     npm test        MCP smoke test (in $DIR)"
+echo
+echo "   The gateway autostarts at login."
+echo "============================================================"
