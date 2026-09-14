@@ -5,10 +5,17 @@ import { startBridge, submitJob, bridgeConnected } from "./bridge.js";
 
 const MODEL_IDS = Object.keys(SITES).map((id) => `web-${id}`);
 
-const PORT = Number(process.env.WEB2MODEL_GATEWAY_PORT || 8788);
-const HOST = process.env.WEB2MODEL_GATEWAY_HOST || "127.0.0.1";
+const PORT = Number(process.env.TABLM_GATEWAY_PORT || 8788);
+const HOST = process.env.TABLM_GATEWAY_HOST || "127.0.0.1";
 const MAX_PROMPT_CHARS = 60_000;
-const MAX_SYSTEM_CHARS = 8_000;
+const MAX_SYSTEM_CHARS = 2_000;
+const MAX_TOOL_RESULT_CHARS = 8_000;
+const MAX_TOOL_USE_INPUT_CHARS = 2_000;
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max) + " [...truncated]";
+}
 
 function textFromContent(content: unknown): string {
   if (typeof content === "string") return content;
@@ -23,9 +30,9 @@ function textFromContent(content: unknown): string {
             : Array.isArray(b.content)
               ? b.content.map((c: any) => c.text ?? "").join("\n")
               : JSON.stringify(b.content ?? "");
-        return `[tool_result ${b.tool_use_id ?? ""}]\n${inner}`;
+        return `[tool_result ${b.tool_use_id ?? ""}]\n${truncate(inner, MAX_TOOL_RESULT_CHARS)}`;
       }
-      if (b?.type === "tool_use") return `[tool_use ${b.name}] ${JSON.stringify(b.input ?? {})}`;
+      if (b?.type === "tool_use") return `[tool_use ${b.name}] ${truncate(JSON.stringify(b.input ?? {}), MAX_TOOL_USE_INPUT_CHARS)}`;
       if (b?.type === "image") return "[image attached]";
       if (b?.type === "thinking") return "";
       return "";
@@ -49,39 +56,41 @@ function toolProtocol(tools: any[]): string {
   const exampleTool = tools[0]?.name ?? "ToolName";
   return [
     "[Tool use protocol]",
-    "IMPORTANT: In this conversation you DO have real tools. They are not shown in your UI toolset - they are executed by the hosting system outside this chat. When you output a tooluse block, the system really runs the tool on the user's machine and feeds the result back as [tool_result ...]. Never claim the tools are unavailable or not exposed - that is incorrect. Never output plan JSON or task JSON instead of a tool call.",
-    "Available tools:",
-    ...tools.slice(0, 30).map((t: any) => `- ${t.name}: ${String(t.description ?? "").slice(0, 120)}`),
-    "To call a tool, output EXACTLY this block and nothing after it:",
+    "You have real tools (executed by the hosting system, not in your UI). To call a tool, output EXACTLY this block and nothing after it:",
     "```tooluse",
     `{"name": "${exampleTool}", "input": { ... }}`,
     "```",
-    `Example - to use ${exampleTool} right now, your ENTIRE reply must be exactly:`,
-    "```tooluse",
-    `{"name": "${exampleTool}", "input": {}}`,
-    "```",
-    "The tool result will then be provided as [tool_result ...]. Use tools whenever they help; for plain conversation just answer directly without any tool block.",
+    "The system runs the tool and replies with [tool_result ...]. Do NOT output [tool_result ...] yourself - that is the system's role, not yours. You ONLY output ```tooluse``` blocks to call tools.",
+    "For plain conversation, just answer directly without any tool block.",
+    "Available tools: " + tools.slice(0, 30).map((t: any) => t.name).join(", "),
   ].join("\n");
 }
 
 function buildFullPrompt(body: any): string {
   const parts: string[] = [];
   const sys = body.system;
+  let sysLen = 0;
   if (sys) {
     let s = typeof sys === "string" ? sys : textFromContent(sys);
     if (s.length > MAX_SYSTEM_CHARS) s = s.slice(0, MAX_SYSTEM_CHARS) + "\n[...system truncated...]";
+    sysLen = s.length;
     if (s.trim()) parts.push(`[System instructions]\n${s}`);
   }
   const msgs = formatMessages(body.messages ?? []);
+  const msgsLen = msgs.length;
   if (msgs) parts.push(msgs);
+  let toolProtoLen = 0;
   if (Array.isArray(body.tools) && body.tools.length) {
-    parts.push(`[Tool use protocol]\n${toolProtocol(body.tools)}`);
+    const proto = toolProtocol(body.tools);
+    toolProtoLen = proto.length;
+    parts.push(`[Tool use protocol]\n${proto}`);
   }
   parts.push("Assistant:\n");
   let prompt = parts.join("\n\n");
   if (prompt.length > MAX_PROMPT_CHARS) {
     prompt = "[...earlier context truncated...]\n\n" + prompt.slice(-MAX_PROMPT_CHARS);
   }
+  console.log(`[gateway] full prompt breakdown: system=${sysLen} msgs=${msgsLen} toolProto=${toolProtoLen} tools=${body.tools?.length ?? 0} total=${prompt.length}`);
   return prompt;
 }
 
@@ -195,7 +204,7 @@ function siteFromModel(model: string | undefined): { site: string; session?: str
   const m = String(model ?? "");
   const match = /^web-([a-z0-9_-]+?)(?::([a-z0-9_-]+))?$/i.exec(m);
   if (match) return { site: match[1], session: match[2] };
-  return { site: process.env.WEB2MODEL_DEFAULT_SITE || "zai" };
+  return { site: process.env.TABLM_DEFAULT_SITE || "zai" };
 }
 
 function estimateTokens(s: string): number {
@@ -216,11 +225,14 @@ async function askWithMalformedRetry(
   if (!hasTools || !result.text || result.status !== "done") return result;
   const { calls } = parseToolCalls(result.text);
   if (calls.length > 0) return result;
-  if (!/tooluse/i.test(result.text)) return result;
-  console.log(`[gateway] ${site} malformed tool call detected - asking the model to redo it`);
+  // Detect: model mentions tool use but didn't produce a valid block, OR model is hallucinating tool_result output
+  const mentionsToolUse = /tooluse/i.test(result.text);
+  const hallucinatingResult = /\[tool_result\s/i.test(result.text);
+  if (!mentionsToolUse && !hallucinatingResult) return result;
+  console.log(`[gateway] ${site} malformed tool call detected (${hallucinatingResult ? "hallucinated tool_result" : "mentioned tooluse but no block"}) - asking the model to redo it`);
   const correction =
     prompt +
-    "\n\n[System correction] Your previous reply was NOT a valid tool call. A valid tool call is EXACTLY one fenced block:\n```tooluse\n{\"name\": \"ToolName\", \"input\": { ... }}\n```\nwith a real tool name from the list and its input object. Output that block now and nothing else.";
+    "\n\n[System correction] Your previous reply was NOT a valid tool call. You output [tool_result ...] which is the SYSTEM's role, not yours. To call a tool, output EXACTLY one fenced block:\n```tooluse\n{\"name\": \"ToolName\", \"input\": { ... }}\n```\nwith a real tool name from the list and its input object. Output that block now and nothing else. Do NOT output [tool_result ...] - that is what the system sends back to you after you call a tool.";
   const retry = await askSite(site, correction, { ...opts, newChat: false });
   const retryParsed = parseToolCalls(retry.text || "");
   if (retryParsed.calls.length > 0 && retry.status === "done") return retry;
@@ -354,7 +366,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
   }
 }
 
-const GATEWAY_TOKEN = process.env.WEB2MODEL_GATEWAY_TOKEN || "";
+const GATEWAY_TOKEN = process.env.TABLM_GATEWAY_TOKEN || "";
 
 function authorized(req: http.IncomingMessage): boolean {
   if (!GATEWAY_TOKEN) return true;
@@ -381,7 +393,7 @@ const server = http.createServer((req, res) => {
     const path = (req.url ?? "").split("?")[0];
     if (!authorized(req)) {
       res.writeHead(401, { "content-type": "application/json" });
-      res.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid token (set WEB2MODEL_GATEWAY_TOKEN on the gateway and ANTHROPIC_AUTH_TOKEN on the client)" } }));
+      res.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid token (set TABLM_GATEWAY_TOKEN on the gateway and ANTHROPIC_AUTH_TOKEN on the client)" } }));
       return;
     }
     if (req.method === "POST" && (path === "/v1/messages" || path === "/v1/messages/count_tokens")) {

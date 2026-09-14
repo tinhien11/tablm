@@ -45,16 +45,16 @@ Launchers (`tablm`, `tablm-status`, `tablm-logs`, `tablm-gateway`) are `.cmd` fi
 
 `install.sh` does everything: installs dependencies, builds, registers the MCP server with Claude Code (user scope), installs the gateway autostart entry and the `tablm` / `tablm-gateway` launchers.
 
-First run: a dedicated Chrome window opens (`~/.web2model/chrome-profile`). Sign in to the sites you want once - cookies persist.
+First run: a dedicated Chrome window opens (`~/.tablm/chrome-profile`). Sign in to the sites you want once - cookies persist.
 
 ### Extension mode (optional - remote Chrome with your real profile)
 
 For the VM scenario: the gateway runs anywhere (VM/container), and a browser extension drives Chrome on the host machine using its **real profile** (no CDP flags, no separate login). The extension speaks the `fancy-browser/1` protocol and ships battle-tested site adapters (chatgpt, kimi, glm/z.ai, gemini, grok).
 
-1. Start the gateway - the bridge listens on `ws://0.0.0.0:8765` (override with `WEB2MODEL_BRIDGE_PORT`; protect it with `WEB2MODEL_BRIDGE_TOKEN`)
+1. Start the gateway - the bridge listens on `ws://0.0.0.0:8765` (override with `TABLM_BRIDGE_PORT`; protect it with `TABLM_BRIDGE_TOKEN`)
 2. Load the extension in host Chrome: `chrome://extensions` -> Developer mode -> Load unpacked (use the fancy-gpt exported bundle - `fancy-gpt extension export --browser chrome`)
 3. In the extension popup: endpoint `ws://<gateway-ip>:8765` + token -> Connect
-4. Enable the transport - globally (`WEB2MODEL_TRANSPORT=extension`) or per site in `~/.web2model/sites.json`:
+4. Enable the transport - globally (`TABLM_TRANSPORT=extension`) or per site in `~/.tablm/sites.json`:
 
 ```json
 { "zai": { "transport": "extension" } }
@@ -81,7 +81,7 @@ Site mapping over the extension: `chatgpt -> chatgpt`, `kimi -> kimi`, `zai -> g
 
 - Selectors per site: `~/.tablm/sites.json` (deep-merged over defaults)
 - Session map: `~/.tablm/sessions.json`
-- Env: `WEB2MODEL_CDP_URL` (default `http://127.0.0.1:9222`), `WEB2MODEL_GATEWAY_PORT` (8788), `WEB2MODEL_CHROME_BIN`, `WEB2MODEL_CHROME_PROFILE`, `WEB2MODEL_SITES_CONFIG`, `WEB2MODEL_SESSIONS`
+- Env: `TABLM_CDP_URL` (default `http://127.0.0.1:9222`), `TABLM_GATEWAY_PORT` (8788), `TABLM_CHROME_BIN`, `TABLM_CHROME_PROFILE`, `TABLM_SITES_CONFIG`, `TABLM_SESSIONS`
 
 ## Adding a site
 
@@ -92,5 +92,5 @@ Add one object to `SITES` in `src/driver.ts` (selectors + URL patterns), rebuild
 ```bash
 npm test                # MCP smoke test
 curl -s http://127.0.0.1:8788/health
-grep prompt= /tmp/w2m-gw.log   # gateway log: prompt sizes, delta/full mode, tool_calls
+grep prompt= /tmp/tablm-gw.log   # gateway log: prompt sizes, delta/full mode, tool_calls
 ```

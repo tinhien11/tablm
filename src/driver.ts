@@ -150,7 +150,7 @@ function deepMerge<T>(base: T, override: unknown): T {
 
 function configPath(): string {
   return (
-    process.env.WEB2MODEL_SITES_CONFIG ||
+    process.env.TABLM_SITES_CONFIG ||
     path.join(os.homedir(), ".tablm", "sites.json")
   );
 }
@@ -221,7 +221,7 @@ async function requireCdp(): Promise<void> {
     await listTargets();
   } catch {
     throw new Error(
-      `Chrome debug port not reachable at ${process.env.WEB2MODEL_CDP_URL || "http://127.0.0.1:9222"} even after auto-launch`
+      `Chrome debug port not reachable at ${process.env.TABLM_CDP_URL || "http://127.0.0.1:9222"} even after auto-launch`
     );
   }
 }
@@ -269,7 +269,7 @@ async function ensureOnSite(page: Page, site: SiteConfig): Promise<void> {
 }
 
 function sessionsFile(): string {
-  return process.env.WEB2MODEL_SESSIONS || path.join(os.homedir(), ".tablm", "sessions.json");
+  return process.env.TABLM_SESSIONS || path.join(os.homedir(), ".tablm", "sessions.json");
 }
 
 const sessions: Record<string, string> = (() => {
@@ -297,11 +297,11 @@ export interface AskOptions {
 }
 
 function gatewayHttp(): string {
-  return process.env.WEB2MODEL_GATEWAY_HTTP || "http://127.0.0.1:8788";
+  return process.env.TABLM_GATEWAY_HTTP || "http://127.0.0.1:8788";
 }
 
 function transportFor(site: SiteConfig): "cdp" | "extension" {
-  return site.transport ?? ((process.env.WEB2MODEL_TRANSPORT as "cdp" | "extension") || "cdp");
+  return site.transport ?? ((process.env.TABLM_TRANSPORT as "cdp" | "extension") || "cdp");
 }
 
 async function extAsk(

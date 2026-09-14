@@ -1,8 +1,8 @@
 import { WebSocketServer, WebSocket } from "ws";
 
-const BRIDGE_PORT = Number(process.env.WEB2MODEL_BRIDGE_PORT || 8765);
+const BRIDGE_PORT = Number(process.env.TABLM_BRIDGE_PORT || 8765);
 const BRIDGE_TOKEN =
-  process.env.WEB2MODEL_BRIDGE_TOKEN || process.env.WEB2MODEL_GATEWAY_TOKEN || "";
+  process.env.TABLM_BRIDGE_TOKEN || process.env.TABLM_GATEWAY_TOKEN || "";
 
 let client: WebSocket | null = null;
 const pending = new Map<

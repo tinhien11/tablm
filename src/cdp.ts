@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 const cdpOpts = (() => {
-  const raw = process.env.WEB2MODEL_CDP_URL || "http://127.0.0.1:9222";
+  const raw = process.env.TABLM_CDP_URL || "http://127.0.0.1:9222";
   const u = new URL(raw);
   return {
     host: u.hostname,
@@ -15,7 +15,7 @@ const cdpOpts = (() => {
 })();
 
 const CHROME_CANDIDATES = [
-  process.env.WEB2MODEL_CHROME_BIN,
+  process.env.TABLM_CHROME_BIN,
   "google-chrome-stable",
   "google-chrome",
   "chromium-browser",
@@ -52,7 +52,7 @@ function macChromePaths(): string[] {
 }
 
 function chromeProfileDir(): string {
-  return process.env.WEB2MODEL_CHROME_PROFILE || path.join(os.homedir(), ".web2model", "chrome-profile");
+  return process.env.TABLM_CHROME_PROFILE || path.join(os.homedir(), ".tablm", "chrome-profile");
 }
 
 function findChromeBin(): string | null {
@@ -91,15 +91,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function ensureChrome(): Promise<void> {
   if (await cdpAlive()) return;
   const remoteCdp = !["127.0.0.1", "localhost", "::1"].includes(cdpOpts.host);
-  if (remoteCdp || process.env.WEB2MODEL_NO_LOCAL_CHROME === "1") {
+  if (remoteCdp || process.env.TABLM_NO_LOCAL_CHROME === "1") {
     throw new Error(
-      `CDP not reachable at ${process.env.WEB2MODEL_CDP_URL || "http://127.0.0.1:9222"} (remote CDP configured - no local Chrome launch; check the Chrome container/host)`
+      `CDP not reachable at ${process.env.TABLM_CDP_URL || "http://127.0.0.1:9222"} (remote CDP configured - no local Chrome launch; check the Chrome container/host)`
     );
   }
   const bin = findChromeBin();
   if (!bin) {
     throw new Error(
-      `CDP not reachable at ${process.env.WEB2MODEL_CDP_URL || "http://127.0.0.1:9222"} and no Chrome binary found in PATH`
+      `CDP not reachable at ${process.env.TABLM_CDP_URL || "http://127.0.0.1:9222"} and no Chrome binary found in PATH`
     );
   }
   const profile = chromeProfileDir();

@@ -10,7 +10,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const home = os.homedir();
 const dist = path.join(root, "dist");
 const binDir = isWin ? path.join(home, ".tablm", "bin") : path.join(home, ".local", "bin");
-const cfgDir = path.join(home, ".web2model");
+const cfgDir = path.join(home, ".tablm");
 const logFile = path.join(cfgDir, "gateway.log");
 
 function sh(cmd, args) {

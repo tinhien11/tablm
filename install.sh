@@ -15,7 +15,7 @@ NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 command -v git >/dev/null 2>&1 || fail "git is required"
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
-if [ ! -f "$DIR/package.json" ] || [ "${WEB2MODEL_FRESH_CLONE:-0}" = "1" ]; then
+if [ ! -f "$DIR/package.json" ] || [ "${TABLM_FRESH_CLONE:-0}" = "1" ]; then
   DIR="$HOME/tablm"
   if [ -f "$DIR/package.json" ]; then
     echo "Updating existing checkout at $DIR"
@@ -48,10 +48,10 @@ echo "[4/6] Installing gateway launcher + autostart"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
 mkdir -p "$BIN_DIR" "$APP_DIR" "$HOME/.config/autostart"
-rm -f "$BIN_DIR/w2m-chrome" "$BIN_DIR/w2m-claude" "$BIN_DIR/w2m-gateway" "$APP_DIR/tablm.desktop" "$HOME/.config/autostart/tablm-chrome.desktop"
+rm -f "$BIN_DIR/tablm-chrome" "$BIN_DIR/tablm-claude" "$BIN_DIR/tablm-gateway" "$APP_DIR/tablm.desktop" "$HOME/.config/autostart/tablm-chrome.desktop"
 cat > "$BIN_DIR/tablm-gateway" <<EOF
 #!/usr/bin/env bash
-exec node "$DIR/dist/gateway.js" "$@" >> "$HOME/.web2model/gateway.log" 2>&1
+exec node "$DIR/dist/gateway.js" "$@" >> "$HOME/.tablm/gateway.log" 2>&1
 EOF
 chmod 755 "$BIN_DIR/tablm-gateway"
 cat > "$BIN_DIR/tablm" <<EOF
@@ -76,16 +76,16 @@ EOF
 chmod 755 "$BIN_DIR/tablm-status"
 cat > "$BIN_DIR/tablm-logs" <<EOF
 #!/usr/bin/env bash
-mkdir -p "$HOME/.web2model"
-tail -n 50 -f "$HOME/.web2model/gateway.log"
+mkdir -p "$HOME/.tablm"
+tail -n 50 -f "$HOME/.tablm/gateway.log"
 EOF
 chmod 755 "$BIN_DIR/tablm-logs"
 
-if [ -n "${WEB2MODEL_GATEWAY_HOST:-}" ]; then
-  sed -i.bak "s|^exec node|export WEB2MODEL_GATEWAY_HOST=\"$WEB2MODEL_GATEWAY_HOST\"\\nexec node|" "$BIN_DIR/tablm-gateway" && rm -f "$BIN_DIR/tablm-gateway.bak"
+if [ -n "${TABLM_GATEWAY_HOST:-}" ]; then
+  sed -i.bak "s|^exec node|export TABLM_GATEWAY_HOST=\"$TABLM_GATEWAY_HOST\"\\nexec node|" "$BIN_DIR/tablm-gateway" && rm -f "$BIN_DIR/tablm-gateway.bak"
 fi
-if [ -n "${WEB2MODEL_GATEWAY_TOKEN:-}" ]; then
-  sed -i.bak "s|^exec node|export WEB2MODEL_GATEWAY_TOKEN=\"$WEB2MODEL_GATEWAY_TOKEN\"\\nexec node|" "$BIN_DIR/tablm-gateway" && rm -f "$BIN_DIR/tablm-gateway.bak"
+if [ -n "${TABLM_GATEWAY_TOKEN:-}" ]; then
+  sed -i.bak "s|^exec node|export TABLM_GATEWAY_TOKEN=\"$TABLM_GATEWAY_TOKEN\"\\nexec node|" "$BIN_DIR/tablm-gateway" && rm -f "$BIN_DIR/tablm-gateway.bak"
 fi
 
 case "$(uname -s)" in
@@ -165,7 +165,7 @@ else
     echo "  running on :8788"
   else
     echo "  WARNING: not up yet - last log lines:"
-    tail -n 5 "$HOME/.web2model/gateway.log" 2>/dev/null || echo "  (no log file)"
+    tail -n 5 "$HOME/.tablm/gateway.log" 2>/dev/null || echo "  (no log file)"
   fi
 fi
 
@@ -201,12 +201,12 @@ echo "     tablm-logs      tail the gateway log"
 echo "     npm test        MCP smoke test (in $DIR)"
 echo
 echo "   The gateway autostarts at login."
-if [ "${WEB2MODEL_GATEWAY_HOST:-}" = "0.0.0.0" ]; then
+if [ "${TABLM_GATEWAY_HOST:-}" = "0.0.0.0" ]; then
   LAN_IP=$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -1)
   [ -z "$LAN_IP" ] && LAN_IP=$(ifconfig 2>/dev/null | grep 'inet ' | grep -v 127.0.0.1 | awk '{print $2}' | head -1)
   echo
   echo "   LAN access (host 0.0.0.0):"
-  echo "     ANTHROPIC_BASE_URL=http://${LAN_IP:-<VM_IP>}:8788 ANTHROPIC_AUTH_TOKEN=\${WEB2MODEL_GATEWAY_TOKEN:-tablm} claude"
-  [ -n "${WEB2MODEL_GATEWAY_TOKEN:-}" ] || echo "     (tip: set WEB2MODEL_GATEWAY_TOKEN before install to protect the port)"
+  echo "     ANTHROPIC_BASE_URL=http://${LAN_IP:-<VM_IP>}:8788 ANTHROPIC_AUTH_TOKEN=\${TABLM_GATEWAY_TOKEN:-tablm} claude"
+  [ -n "${TABLM_GATEWAY_TOKEN:-}" ] || echo "     (tip: set TABLM_GATEWAY_TOKEN before install to protect the port)"
 fi
 echo "============================================================"

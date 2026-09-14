@@ -26,8 +26,8 @@ services:
   gateway:
     build: .
     environment:
-      WEB2MODEL_CDP_URL: http://chrome:9223
-      WEB2MODEL_GATEWAY_HOST: 0.0.0.0
+      TABLM_CDP_URL: http://chrome:9223
+      TABLM_GATEWAY_HOST: 0.0.0.0
     ports:
       - "8789:8788"
     depends_on:
