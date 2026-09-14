@@ -15,23 +15,37 @@ Claude Code ──(Anthropic API)──> Gateway :8788 ──(CDP)──> Chrome
 
 Requirements: Node.js 18+, git, Google Chrome/Chromium/Edge, [Claude Code](https://claude.com/claude-code) CLI.
 
+### Linux / macOS
+
 One command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tinhien11/tablm/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tinhien11/tablml/main/install.sh | bash
 ```
 
 Or manually:
 
 ```bash
-git clone https://github.com/tinhien11/tablm.git && cd tablm
+git clone https://github.com/tinhien11/tablml.git && cd tablm
 ./install.sh
 tablm
 ```
 
+### Windows (PowerShell)
+
+```powershell
+git clone https://github.com/tinhien11/tablml.git $env:USERPROFILE\tablml
+cd $env:USERPROFILE\tablml
+npm install; npm run build
+node install.mjs
+tablm
+```
+
+Launchers (`tablm`, `tablm-status`, `tablm-logs`, `tablm-gateway`) are `.cmd` files in `%USERPROFILE%\.tablm\bin` (added to user PATH - open a new terminal after install). Gateway autostarts via the Startup folder.
+
 `install.sh` does everything: installs dependencies, builds, registers the MCP server with Claude Code (user scope), installs the gateway autostart entry and the `tablm` / `tablm-gateway` launchers.
 
-First run: a dedicated Chrome window opens (`~/.tablm/chrome-profile`). Sign in to the sites you want once - cookies persist.
+First run: a dedicated Chrome window opens (`~/.web2model/chrome-profile`). Sign in to the sites you want once - cookies persist.
 
 ## Model ids
 

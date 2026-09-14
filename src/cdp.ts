@@ -24,22 +24,42 @@ const CHROME_CANDIDATES = [
   "microsoft-edge",
 ].filter(Boolean) as string[];
 
+function windowsChromePaths(): string[] {
+  if (process.platform !== "win32") return [];
+  const pf = process.env.PROGRAMFILES || "C:\\Program Files";
+  const pf86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
+  const local = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+  return [
+    path.join(pf, "Google", "Chrome", "Application", "chrome.exe"),
+    path.join(pf86, "Google", "Chrome", "Application", "chrome.exe"),
+    path.join(local, "Google", "Chrome", "Application", "chrome.exe"),
+    path.join(pf, "Microsoft", "Edge", "Application", "msedge.exe"),
+    path.join(pf86, "Microsoft", "Edge", "Application", "msedge.exe"),
+    path.join(local, "Chromium", "Application", "chrome.exe"),
+    path.join(pf, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+  ];
+}
+
 function chromeProfileDir(): string {
   return process.env.WEB2MODEL_CHROME_PROFILE || path.join(os.homedir(), ".web2model", "chrome-profile");
 }
 
 function findChromeBin(): string | null {
   for (const bin of CHROME_CANDIDATES) {
-    if (bin.includes("/")) {
+    if (bin.includes("/") || bin.includes("\\")) {
       if (fs.existsSync(bin)) return bin;
       continue;
     }
-    for (const dir of (process.env.PATH || "").split(":")) {
+    for (const dir of (process.env.PATH || "").split(path.delimiter)) {
       try {
         const p = path.join(dir, bin);
         if (fs.existsSync(p)) return p;
+        if (process.platform === "win32" && fs.existsSync(p + ".exe")) return p + ".exe";
       } catch {}
     }
+  }
+  for (const p of windowsChromePaths()) {
+    if (fs.existsSync(p)) return p;
   }
   return null;
 }
@@ -78,6 +98,7 @@ export async function ensureChrome(): Promise<void> {
     {
       detached: true,
       stdio: "ignore",
+      windowsHide: true,
       env: { ...process.env, DISPLAY: process.env.DISPLAY || ":0" },
     }
   );
