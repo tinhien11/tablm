@@ -147,7 +147,7 @@ function parseToolCalls(text: string): { calls: ToolCall[]; cleanText: string } 
   return { calls, cleanText };
 }
 
-const lastMessages = new Map<string, string[]>();
+const lastMessages = new Map<string, { sigs: string[]; protocolSent: boolean }>();
 
 function msgSig(m: any): string {
   return `${m.role ?? "user"}\u0000${textFromContent(m.content)}`;
@@ -156,21 +156,28 @@ function msgSig(m: any): string {
 function buildPrompt(body: any, key: string): { prompt: string; mode: "delta" | "full" } {
   const msgs: any[] = body.messages ?? [];
   const sigs = msgs.map(msgSig);
+  const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
   const prev = lastMessages.get(key);
-  if (prev && sigs.length >= prev.length) {
+  if (prev && sigs.length >= prev.sigs.length) {
     let lcp = 0;
-    const n = Math.min(prev.length, sigs.length);
-    while (lcp < n && prev[lcp] === sigs[lcp]) lcp++;
-    if (lcp >= prev.length - 1 && sigs.length > lcp) {
+    const n = Math.min(prev.sigs.length, sigs.length);
+    while (lcp < n && prev.sigs[lcp] === sigs[lcp]) lcp++;
+    if (lcp >= prev.sigs.length - 1 && sigs.length > lcp) {
       const delta = msgs.slice(lcp);
-      const text = formatMessages(delta);
+      let text = formatMessages(delta);
       if (text.trim()) {
-        lastMessages.set(key, sigs);
+        if (hasTools && !prev.protocolSent) {
+          text = `[Tool use protocol]\n${toolProtocol(body.tools)}\n\n${text}`;
+          lastMessages.set(key, { sigs, protocolSent: true });
+          console.log(`[gateway] ${key} tool protocol injected (delta, first time for this web conversation)`);
+          return { prompt: text, mode: "delta" };
+        }
+        lastMessages.set(key, { sigs, protocolSent: prev.protocolSent });
         return { prompt: text, mode: "delta" };
       }
     }
   }
-  lastMessages.set(key, sigs);
+  lastMessages.set(key, { sigs, protocolSent: hasTools });
   const full = buildFullPrompt(body);
   return { prompt: full, mode: "full" };
 }

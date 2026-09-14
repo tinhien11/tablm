@@ -400,7 +400,7 @@ export async function askSite(
     try {
       result = await page.evalValue<TurnResult>(expression);
     } catch (e) {
-      if (e instanceof CdpError && /context|destroyed|navigation/i.test(e.message)) {
+      if (e instanceof CdpError && /context|destroyed|navigat|closed|target/i.test(e.message)) {
         result = await page.evalValue<TurnResult>(expression);
       } else {
         throw e;
