@@ -225,14 +225,15 @@ async function askWithMalformedRetry(
   if (!hasTools || !result.text || result.status !== "done") return result;
   const { calls } = parseToolCalls(result.text);
   if (calls.length > 0) return result;
-  // Detect: model mentions tool use but didn't produce a valid block, OR model is hallucinating tool_result output
-  const mentionsToolUse = /tooluse/i.test(result.text);
+  // Only retry on REAL malformed attempts: hallucinated tool_result, or ```tooluse``` fence with broken JSON
+  // Do NOT retry just because "tooluse" appears in prose ("I will use tooluse to...")
+  const hasTooluseFence = /```tooluse/i.test(result.text);
   const hallucinatingResult = /\[tool_result\s/i.test(result.text);
-  if (!mentionsToolUse && !hallucinatingResult) return result;
-  console.log(`[gateway] ${site} malformed tool call detected (${hallucinatingResult ? "hallucinated tool_result" : "mentioned tooluse but no block"}) - asking the model to redo it`);
+  if (!hasTooluseFence && !hallucinatingResult) return result;
+  console.log(`[gateway] ${site} malformed tool call detected (${hallucinatingResult ? "hallucinated tool_result" : "broken tooluse fence"}) - asking the model to redo it`);
   const correction =
     prompt +
-    "\n\n[System correction] Your previous reply was NOT a valid tool call. You output [tool_result ...] which is the SYSTEM's role, not yours. To call a tool, output EXACTLY one fenced block:\n```tooluse\n{\"name\": \"ToolName\", \"input\": { ... }}\n```\nwith a real tool name from the list and its input object. Output that block now and nothing else. Do NOT output [tool_result ...] - that is what the system sends back to you after you call a tool.";
+    "\n\n[System correction] Your previous reply was NOT a valid tool call. To call a tool, output EXACTLY one fenced block:\n```tooluse\n{\"name\": \"ToolName\", \"input\": { ... }}\n```\nwith a real tool name from the list and its input object. Output that block now and nothing else. Do NOT output [tool_result ...] - that is what the system sends back to you after you call a tool.";
   const retry = await askSite(site, correction, { ...opts, newChat: false });
   const retryParsed = parseToolCalls(retry.text || "");
   if (retryParsed.calls.length > 0 && retry.status === "done") return retry;
