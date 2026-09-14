@@ -146,7 +146,7 @@ function deepMerge<T>(base: T, override: unknown): T {
 function configPath(): string {
   return (
     process.env.WEB2MODEL_SITES_CONFIG ||
-    path.join(os.homedir(), ".web2model", "sites.json")
+    path.join(os.homedir(), ".tablm", "sites.json")
   );
 }
 
@@ -264,7 +264,7 @@ async function ensureOnSite(page: Page, site: SiteConfig): Promise<void> {
 }
 
 function sessionsFile(): string {
-  return process.env.WEB2MODEL_SESSIONS || path.join(os.homedir(), ".web2model", "sessions.json");
+  return process.env.WEB2MODEL_SESSIONS || path.join(os.homedir(), ".tablm", "sessions.json");
 }
 
 const sessions: Record<string, string> = (() => {

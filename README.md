@@ -1,4 +1,4 @@
-# web2model
+# tablm
 
 Use web AI chats (ChatGPT, Z.ai GLM, Kimi) as local models for Claude Code - no API keys, no Anthropic login.
 
@@ -18,20 +18,20 @@ Requirements: Node.js 18+, git, Google Chrome/Chromium/Edge, [Claude Code](https
 One command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tinhien11/web2model/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tinhien11/tablm/main/install.sh | bash
 ```
 
 Or manually:
 
 ```bash
-git clone https://github.com/tinhien11/web2model.git && cd web2model
+git clone https://github.com/tinhien11/tablm.git && cd tablm
 ./install.sh
 w2m-claude
 ```
 
 `install.sh` does everything: installs dependencies, builds, registers the MCP server with Claude Code (user scope), installs the gateway autostart entry and the `w2m-claude` / `w2m-gateway` launchers.
 
-First run: a dedicated Chrome window opens (`~/.web2model/chrome-profile`). Sign in to the sites you want once - cookies persist.
+First run: a dedicated Chrome window opens (`~/.tablm/chrome-profile`). Sign in to the sites you want once - cookies persist.
 
 ## Model ids
 
@@ -50,8 +50,8 @@ First run: a dedicated Chrome window opens (`~/.web2model/chrome-profile`). Sign
 
 ## Configuration
 
-- Selectors per site: `~/.web2model/sites.json` (deep-merged over defaults)
-- Session map: `~/.web2model/sessions.json`
+- Selectors per site: `~/.tablm/sites.json` (deep-merged over defaults)
+- Session map: `~/.tablm/sessions.json`
 - Env: `WEB2MODEL_CDP_URL` (default `http://127.0.0.1:9222`), `WEB2MODEL_GATEWAY_PORT` (8788), `WEB2MODEL_CHROME_BIN`, `WEB2MODEL_CHROME_PROFILE`, `WEB2MODEL_SITES_CONFIG`, `WEB2MODEL_SESSIONS`
 
 ## Adding a site

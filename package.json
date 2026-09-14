@@ -1,11 +1,11 @@
 {
-  "name": "web2model",
+  "name": "tablm",
   "version": "0.1.0",
   "description": "Expose web AI chats (ChatGPT, Kimi, ...) as MCP tools for Claude via Chrome DevTools Protocol",
   "type": "module",
   "bin": {
-    "web2model": "dist/index.js",
-    "web2model-gateway": "dist/gateway.js"
+    "tablm": "dist/index.js",
+    "tablm-gateway": "dist/gateway.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

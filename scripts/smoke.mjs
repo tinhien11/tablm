@@ -40,7 +40,7 @@ function handle(msg) {
     });
   } else if (msg.id === 4) {
     const text = msg.result?.content?.[0]?.text ?? "";
-    const ok = text.includes("[web2model]") || msg.result?.isError;
+    const ok = text.includes("[tablm]") || msg.result?.isError;
     console.log(ok ? "PASS ask (graceful):" : "FAIL ask:", text.slice(0, 200));
     if (!ok) failures++;
     console.log(failures === 0 ? "SMOKE OK" : `SMOKE FAILED (${failures})`);

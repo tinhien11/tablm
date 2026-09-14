@@ -228,7 +228,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
       clearInterval(ping);
       const msg = e instanceof Error ? e.message : String(e);
       sse(res, "content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
-      sse(res, "content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `[web2model error] ${msg}` } });
+      sse(res, "content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `[tablm error] ${msg}` } });
       sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
       sse(res, "message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 1 } });
       sse(res, "message_stop", { type: "message_stop" });
@@ -247,7 +247,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
           delta: { type: "thinking_delta", thinking: result.thinking.slice(i, i + 800) },
         });
       }
-      sse(res, "content_block_delta", { type: "content_block_delta", index, delta: { type: "signature_delta", signature: "web2model" } });
+      sse(res, "content_block_delta", { type: "content_block_delta", index, delta: { type: "signature_delta", signature: "tablm" } });
       sse(res, "content_block_stop", { type: "content_block_stop", index });
       index++;
     }
@@ -286,10 +286,10 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
   try {
     const result = await askSite(site, prompt, { newChat: mode === "full", session, timeoutS: 100 });
     const { calls, cleanText } = parseToolCalls(result.text || "");
-    const text = cleanText || (calls.length ? "" : result.error ? `[web2model ${result.status}] ${result.error}` : "");
+    const text = cleanText || (calls.length ? "" : result.error ? `[tablm ${result.status}] ${result.error}` : "");
     const content: any[] = [];
     if (result.thinking) {
-      content.push({ type: "thinking", thinking: result.thinking, signature: "web2model" });
+      content.push({ type: "thinking", thinking: result.thinking, signature: "tablm" });
     }
     if (cleanText) content.push({ type: "text", text });
     for (const c of calls) {
@@ -312,7 +312,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     res.writeHead(500, { "content-type": "application/json" });
-    res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: `web2model: ${msg}` } }));
+    res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: `tablm: ${msg}` } }));
   }
 }
 
@@ -342,7 +342,7 @@ const server = http.createServer((req, res) => {
         const msg = e instanceof Error ? e.message : String(e);
         if (!res.headersSent) {
           res.writeHead(500, { "content-type": "application/json" });
-          res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: `web2model: ${msg}` } }));
+          res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: `tablm: ${msg}` } }));
         } else {
           res.end();
         }
@@ -351,7 +351,7 @@ const server = http.createServer((req, res) => {
     }
     if (req.method === "GET" && (path === "/" || path === "/health")) {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, service: "web2model-gateway", sites: MODEL_IDS }));
+      res.end(JSON.stringify({ ok: true, service: "tablm-gateway", sites: MODEL_IDS }));
       return;
     }
     res.writeHead(404, { "content-type": "application/json" });
@@ -360,6 +360,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`web2model gateway listening on http://${HOST}:${PORT}`);
-  console.log(`use with: ANTHROPIC_BASE_URL=http://${HOST}:${PORT} ANTHROPIC_AUTH_TOKEN=web2model claude --model web-chatgpt`);
+  console.log(`tablm gateway listening on http://${HOST}:${PORT}`);
+  console.log(`use with: ANTHROPIC_BASE_URL=http://${HOST}:${PORT} ANTHROPIC_AUTH_TOKEN=tablm claude --model web-chatgpt`);
 });

@@ -4,7 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { askSite, listSites, inspectDom, screenshotSite } from "./driver.js";
 
-const server = new McpServer({ name: "web2model", version: "0.1.0" });
+const server = new McpServer({ name: "tablm", version: "0.1.0" });
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -41,7 +41,7 @@ server.tool(
         conversationId: conversation_id,
         timeoutS: timeout_s,
       });
-      const meta = `[web2model] site=${r.site} status=${r.status} conversation_id=${r.conversationId ?? "new"} session=${r.reused ? "continued" : "new"}${r.error ? " error=" + r.error : ""}`;
+      const meta = `[tablm] site=${r.site} status=${r.status} conversation_id=${r.conversationId ?? "new"} session=${r.reused ? "continued" : "new"}${r.error ? " error=" + r.error : ""}`;
       const text = r.text ? `${r.text}\n\n${meta}` : meta;
       return {
         content: [{ type: "text" as const, text }],
@@ -55,14 +55,14 @@ server.tool(
         },
       };
     } catch (e) {
-      return { content: [{ type: "text" as const, text: `web2model error: ${errText(e)}` }], isError: true };
+      return { content: [{ type: "text" as const, text: `tablm error: ${errText(e)}` }], isError: true };
     }
   }
 );
 
 server.tool(
   "list_sites",
-  "List web AI sites supported by web2model and whether their tab is open, signed in, and ready.",
+  "List web AI sites supported by tablm and whether their tab is open, signed in, and ready.",
   {},
   async () => {
     try {
@@ -71,7 +71,7 @@ server.tool(
         content: [{ type: "text" as const, text: JSON.stringify(sites, null, 2) }],
       };
     } catch (e) {
-      return { content: [{ type: "text" as const, text: `web2model error: ${errText(e)}` }], isError: true };
+      return { content: [{ type: "text" as const, text: `tablm error: ${errText(e)}` }], isError: true };
     }
   }
 );
@@ -90,7 +90,7 @@ server.tool(
         content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
       };
     } catch (e) {
-      return { content: [{ type: "text" as const, text: `web2model error: ${errText(e)}` }], isError: true };
+      return { content: [{ type: "text" as const, text: `tablm error: ${errText(e)}` }], isError: true };
     }
   }
 );
@@ -104,7 +104,7 @@ server.tool(
       const data = await screenshotSite(site);
       return { content: [{ type: "image" as const, data, mimeType: "image/png" }] };
     } catch (e) {
-      return { content: [{ type: "text" as const, text: `web2model error: ${errText(e)}` }], isError: true };
+      return { content: [{ type: "text" as const, text: `tablm error: ${errText(e)}` }], isError: true };
     }
   }
 );
