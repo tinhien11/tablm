@@ -1,31 +1,8 @@
 # tablm
 
-Use web AI chats (ChatGPT, Z.ai GLM, Kimi) as local models for Claude Code - no API keys, no Anthropic login.
-
-```
-Claude Code ──(Anthropic API)──> Gateway :8788 ──(CDP)──> Chrome ──> chatgpt.com / chat.z.ai / kimi.ai
-```
-
-- **Gateway**: Anthropic-compatible HTTP server (port 8788). Translates Claude Code conversations into web chat prompts, and web replies back into Anthropic format (including `thinking` and `tool_use` blocks).
-- **Tool-call bridge**: the web model can call Claude Code's tools (Bash, Read, Edit...) - the gateway translates its ```tooluse``` blocks into real tool_use blocks, Claude Code executes them locally.
-- **Session mapping**: each site keeps one live web conversation; only the message delta is sent after the first turn.
-- **Auto-launch**: Chrome with a dedicated debug profile starts automatically on first use (Chrome 136+ forbids CDP on the default profile).
+Use web AI chats (ChatGPT, Z.ai GLM, Kimi) as local models - no API keys, no Anthropic login.
 
 ## Architecture
-
-Two clients can drive the same gateway:
-
-### Claude Code (MCP mode)
-
-```
-Claude Code ──(Anthropic API)──> Gateway :8788 ──(CDP)──> Chrome ──> web chat
-```
-
-Claude Code sends 100+ tools and its full system prompt. The gateway forwards them to the web model, which returns ```tooluse``` blocks. The gateway translates those into Anthropic `tool_use` SSE events. Claude Code executes the tools locally and sends `tool_result` back. The gateway pastes the result into the web chat as the next message; the model reads it and continues.
-
-### tablm-cli (lean agent mode)
-
-`tablm-cli` is a minimal autonomous agent that ships with tablm. It exposes only 6 tools (Bash, Read, Write, Edit, Grep, Glob) and a short system prompt, so the prompt sent to the web model is ~95% smaller than Claude Code's. It runs in a REPL: the first prompt is a CLI arg, follow-up prompts keep the same session (same `messages[]`, same web chat conversation).
 
 ```
 tablm-cli (agent)          gateway (translator)         web chat (model)
@@ -46,13 +23,48 @@ tablm-cli (agent)          gateway (translator)         web chat (model)
      │<── SSE: final text ─────│                            │
 ```
 
-Key points:
-- The web model has no real tool API. The gateway injects a `[Tool use protocol]` text block that teaches the model to emit ```tooluse {"name":"Bash","input":{...}}``` fenced blocks.
-- The gateway parses those blocks and emits Anthropic `tool_use` SSE events.
-- `tablm-cli` executes the tool locally and sends `tool_result` back. The gateway pastes it into the same web chat conversation (session mapping in `~/.tablm/sessions.json`), so the model sees the result as the next message and continues.
-- Each tool round-trip is one web chat call (8-30s latency). 10 tool calls = 10 web calls = 2-5 minutes.
+Two clients drive the same gateway (`:8788`):
 
-Usage:
+- **Claude Code** (MCP mode): sends 100+ tools + full system prompt. Gateway forwards to web model, translates ```tooluse``` blocks back into Anthropic `tool_use` SSE events. Claude Code executes tools locally.
+- **tablm-cli** (lean agent): 6 tools (Bash, Read, Write, Edit, Grep, Glob), short system prompt. ~95% smaller prompt than Claude Code. REPL session mode keeps context across follow-up prompts.
+
+The web model has no real tool API. The gateway injects a `[Tool use protocol]` text block teaching the model to emit ```tooluse {"name":"Bash","input":{...}}``` fenced blocks. The gateway parses those into `tool_use` events; the client executes the tool and sends `tool_result` back; the gateway pastes it into the same web chat conversation (session mapping in `~/.tablm/sessions.json`).
+
+Each tool round-trip is one web chat call (8-30s latency).
+
+## Install
+
+Requirements: Node.js 18+, git, Google Chrome/Chromium/Edge, [Claude Code](https://claude.com/claude-code) CLI.
+
+### Linux / macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tinhien11/tablm/main/install.sh | bash
+```
+
+Or manually:
+
+```bash
+git clone https://github.com/tinhien11/tablm.git && cd tablm
+./install.sh
+tablm
+```
+
+### Windows (PowerShell)
+
+```powershell
+git clone https://github.com/tinhien11/tablm.git $env:USERPROFILE\tablm
+cd $env:USERPROFILE\tablm
+npm install; npm run build
+node install.mjs
+tablm
+```
+
+Launchers (`tablm`, `tablm-status`, `tablm-logs`, `tablm-gateway`) are `.cmd` files in `%USERPROFILE%\.tablm\bin` (added to user PATH - open a new terminal). Gateway autostarts via the Startup folder.
+
+First run: a dedicated Chrome window opens (`~/.tablm/chrome-profile`). Sign in to the sites you want once - cookies persist.
+
+### tablm-cli
 
 ```bash
 tablm-cli "read HANDOFF.md and continue the loop"
@@ -62,43 +74,7 @@ tablm-cli "read HANDOFF.md and continue the loop"
 
 Env: `TABLM_MODEL` (default `web-zai`), `TABLM_MAX_TURNS` (default 50), `TABLM_GATEWAY_URL` (default `http://127.0.0.1:8788`), `TABLM_AUTH_TOKEN` (default `tablm`).
 
-## Install (any machine)
-
-Requirements: Node.js 18+, git, Google Chrome/Chromium/Edge, [Claude Code](https://claude.com/claude-code) CLI.
-
-### Linux / macOS
-
-One command:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/tinhien11/tablml/main/install.sh | bash
-```
-
-Or manually:
-
-```bash
-git clone https://github.com/tinhien11/tablml.git && cd tablm
-./install.sh
-tablm
-```
-
-### Windows (PowerShell)
-
-```powershell
-git clone https://github.com/tinhien11/tablml.git $env:USERPROFILE\tablml
-cd $env:USERPROFILE\tablml
-npm install; npm run build
-node install.mjs
-tablm
-```
-
-Launchers (`tablm`, `tablm-status`, `tablm-logs`, `tablm-gateway`) are `.cmd` files in `%USERPROFILE%\.tablm\bin` (added to user PATH - open a new terminal after install). Gateway autostarts via the Startup folder.
-
-`install.sh` does everything: installs dependencies, builds, registers the MCP server with Claude Code (user scope), installs the gateway autostart entry and the `tablm` / `tablm-gateway` launchers.
-
-First run: a dedicated Chrome window opens (`~/.tablm/chrome-profile`). Sign in to the sites you want once - cookies persist.
-
-### Extension mode (optional - remote Chrome with your real profile)
+## Extension mode (optional - remote Chrome with your real profile)
 
 For the VM scenario: the gateway runs anywhere (VM/container), and a browser extension drives Chrome on the host machine using its **real profile** (no CDP flags, no separate login). The extension speaks the `fancy-browser/1` protocol and ships battle-tested site adapters (chatgpt, kimi, glm/z.ai, gemini, grok).
 
@@ -143,5 +119,5 @@ Add one object to `SITES` in `src/driver.ts` (selectors + URL patterns), rebuild
 ```bash
 npm test                # MCP smoke test
 curl -s http://127.0.0.1:8788/health
-grep prompt= /tmp/tablm-gw.log   # gateway log: prompt sizes, delta/full mode, tool_calls
+tail -f ~/.tablm/gateway.log   # prompt sizes, delta/full mode, tool_calls
 ```
