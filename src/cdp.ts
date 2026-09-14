@@ -40,6 +40,17 @@ function windowsChromePaths(): string[] {
   ];
 }
 
+function macChromePaths(): string[] {
+  if (process.platform !== "darwin") return [];
+  const apps = "/Applications";
+  return [
+    path.join(apps, "Google Chrome.app", "Contents", "MacOS", "Google Chrome"),
+    path.join(apps, "Chromium.app", "Contents", "MacOS", "Chromium"),
+    path.join(apps, "Microsoft Edge.app", "Contents", "MacOS", "Microsoft Edge"),
+    path.join(apps, "Brave Browser.app", "Contents", "MacOS", "Brave Browser"),
+  ];
+}
+
 function chromeProfileDir(): string {
   return process.env.WEB2MODEL_CHROME_PROFILE || path.join(os.homedir(), ".web2model", "chrome-profile");
 }
@@ -58,7 +69,7 @@ function findChromeBin(): string | null {
       } catch {}
     }
   }
-  for (const p of windowsChromePaths()) {
+  for (const p of [...windowsChromePaths(), ...macChromePaths()]) {
     if (fs.existsSync(p)) return p;
   }
   return null;
@@ -79,6 +90,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function ensureChrome(): Promise<void> {
   if (await cdpAlive()) return;
+  const remoteCdp = !["127.0.0.1", "localhost", "::1"].includes(cdpOpts.host);
+  if (remoteCdp || process.env.WEB2MODEL_NO_LOCAL_CHROME === "1") {
+    throw new Error(
+      `CDP not reachable at ${process.env.WEB2MODEL_CDP_URL || "http://127.0.0.1:9222"} (remote CDP configured - no local Chrome launch; check the Chrome container/host)`
+    );
+  }
   const bin = findChromeBin();
   if (!bin) {
     throw new Error(

@@ -14,7 +14,7 @@ NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$NODE_MAJOR" -ge 18 ] || fail "Node.js 18+ required, found $(node --version)"
 command -v git >/dev/null 2>&1 || fail "git is required"
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
 if [ ! -f "$DIR/package.json" ] || [ "${WEB2MODEL_FRESH_CLONE:-0}" = "1" ]; then
   DIR="$HOME/tablm"
   if [ -f "$DIR/package.json" ]; then
@@ -80,10 +80,29 @@ mkdir -p "$HOME/.web2model"
 tail -n 50 -f "$HOME/.web2model/gateway.log"
 EOF
 chmod 755 "$BIN_DIR/tablm-logs"
-if systemctl --user status 2>/dev/null | grep -q "State:"; then
-  SYSTEMD_DIR="$HOME/.config/systemd/user"
-  mkdir -p "$SYSTEMD_DIR"
-  cat > "$SYSTEMD_DIR/tablm-gateway.service" <<EOF
+
+case "$(uname -s)" in
+  Darwin)
+    mkdir -p "$HOME/Library/LaunchAgents"
+    cat > "$HOME/Library/LaunchAgents/com.tablm.gateway.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.tablm.gateway</string>
+  <key>ProgramArguments</key><array><string>$BIN_DIR/tablm-gateway</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict></plist>
+EOF
+    launchctl unload "$HOME/Library/LaunchAgents/com.tablm.gateway.plist" >/dev/null 2>&1 || true
+    launchctl load "$HOME/Library/LaunchAgents/com.tablm.gateway.plist" >/dev/null 2>&1 || true
+    echo "  macOS LaunchAgent installed (KeepAlive)"
+    ;;
+  Linux)
+    if systemctl --user status >/dev/null 2>&1; then
+      SYSTEMD_DIR="$HOME/.config/systemd/user"
+      mkdir -p "$SYSTEMD_DIR"
+      cat > "$SYSTEMD_DIR/tablm-gateway.service" <<EOF
 [Unit]
 Description=tablm gateway (web AI chats as Anthropic-compatible model)
 [Service]
@@ -93,11 +112,11 @@ RestartSec=3
 [Install]
 WantedBy=default.target
 EOF
-  systemctl --user daemon-reload
-  systemctl --user enable --now tablm-gateway.service >/dev/null 2>&1 || true
-  echo "  systemd user service: tablm-gateway (enabled)"
-else
-  cat > "$HOME/.config/autostart/tablm-gateway.desktop" <<EOF
+      systemctl --user daemon-reload
+      systemctl --user enable --now tablm-gateway.service >/dev/null 2>&1 || true
+      echo "  systemd user service: tablm-gateway (enabled)"
+    else
+      cat > "$HOME/.config/autostart/tablm-gateway.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=tablm Gateway
@@ -106,31 +125,54 @@ Exec=$BIN_DIR/tablm-gateway
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
-  update-desktop-database "$APP_DIR" 2>/dev/null || true
-  echo "  .desktop autostart installed"
-fi
+      update-desktop-database "$APP_DIR" 2>/dev/null || true
+      echo "  .desktop autostart installed"
+    fi
+    ;;
+esac
+
+for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+  if [ -f "$rc" ] && ! grep -q "tablm PATH" "$rc" 2>/dev/null; then
+    echo "export PATH=\"\$HOME/.local/bin:\$PATH\" # tablm PATH" >> "$rc"
+    PATH_NOTE=1
+  fi
+done
+[ "${PATH_NOTE:-0}" = "1" ] && echo "  PATH updated in ~/.zshrc / ~/.bashrc (open a NEW terminal or: source ~/.zshrc)"
 
 echo "[5/6] Starting gateway now"
 if curl -s --max-time 3 http://127.0.0.1:8788/health >/dev/null 2>&1; then
   echo "  already running on :8788"
 else
-  if command -v systemctl >/dev/null 2>&1 && systemctl --user is-enabled tablm-gateway.service >/dev/null 2>&1; then
+  if [ "$(uname -s)" = "Darwin" ]; then
+    launchctl kickstart -k "gui/$(id -u)/com.tablm.gateway" >/dev/null 2>&1 || nohup "$BIN_DIR/tablm-gateway" >/dev/null 2>&1 &
+  elif command -v systemctl >/dev/null 2>&1 && systemctl --user is-enabled tablm-gateway.service >/dev/null 2>&1; then
     systemctl --user restart tablm-gateway.service 2>/dev/null || nohup "$BIN_DIR/tablm-gateway" >/dev/null 2>&1 &
   else
     nohup "$BIN_DIR/tablm-gateway" >/dev/null 2>&1 &
   fi
-  for _ in $(seq 1 20); do
+  for _ in $(seq 1 30); do
     sleep 0.5
     curl -s --max-time 2 http://127.0.0.1:8788/health >/dev/null 2>&1 && break
   done
-  curl -s --max-time 3 http://127.0.0.1:8788/health >/dev/null 2>&1 && echo "  running on :8788" || echo "  WARNING: not up yet - check tablm-logs"
+  if curl -s --max-time 3 http://127.0.0.1:8788/health >/dev/null 2>&1; then
+    echo "  running on :8788"
+  else
+    echo "  WARNING: not up yet - last log lines:"
+    tail -n 5 "$HOME/.web2model/gateway.log" 2>/dev/null || echo "  (no log file)"
+  fi
 fi
 
 echo "[6/6] Checking Chrome"
 CHROME_OK=0
-for c in google-chrome-stable google-chrome chromium-browser chromium brave-browser microsoft-edge; do
-  if command -v "$c" >/dev/null 2>&1; then CHROME_OK=1; echo "  found: $c"; break; fi
-done
+if [ "$(uname -s)" = "Darwin" ]; then
+  for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" "/Applications/Chromium.app/Contents/MacOS/Chromium" "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"; do
+    if [ -x "$c" ]; then CHROME_OK=1; echo "  found: $c"; break; fi
+  done
+else
+  for c in google-chrome-stable google-chrome chromium-browser chromium brave-browser microsoft-edge; do
+    if command -v "$c" >/dev/null 2>&1; then CHROME_OK=1; echo "  found: $c"; break; fi
+  done
+fi
 if [ "$CHROME_OK" = "0" ]; then
   echo "  WARNING: no Chrome/Chromium/Edge found - install one; it auto-launches on first ask"
 fi
