@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { exec as execCb } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
@@ -10,6 +10,57 @@ const GATEWAY = process.env.TABLM_GATEWAY_URL || "http://127.0.0.1:8788";
 const AUTH_TOKEN = process.env.TABLM_AUTH_TOKEN || "tablm";
 const MODEL = process.env.TABLM_MODEL || "web-zai";
 const MAX_TURNS = Number(process.env.TABLM_MAX_TURNS || 50);
+
+// ---------- CLI session persistence ----------
+const SESSIONS_DIR = path.join(homedir(), ".tablm", "cli-sessions");
+
+interface CliSession {
+  id: string;
+  created: string;
+  updated: string;
+  cwd: string;
+  model: string;
+  prompt: string;
+  messages: any[];
+}
+
+function loadSession(id: string): CliSession | null {
+  const file = path.join(SESSIONS_DIR, `${id}.json`);
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(session: CliSession): void {
+  mkdirSync(SESSIONS_DIR, { recursive: true });
+  session.updated = new Date().toISOString();
+  writeFileSync(path.join(SESSIONS_DIR, `${session.id}.json`), JSON.stringify(session, null, 2));
+}
+
+function listSessions(): CliSession[] {
+  try {
+    return readdirSync(SESSIONS_DIR)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => {
+        try {
+          return JSON.parse(readFileSync(path.join(SESSIONS_DIR, f), "utf8"));
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+  } catch {
+    return [];
+  }
+}
+
+function genSessionId(): string {
+  const now = new Date();
+  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+}
 
 // ---------- Scratch tab manager (1 tab per CLI session) ----------
 let scratchPage: CdpPage | null = null;
@@ -510,10 +561,63 @@ async function runTurn(messages: any[]): Promise<boolean> {
 }
 
 async function main() {
-  const initialPrompt = process.argv.slice(2).join(" ");
-  if (!initialPrompt) {
-    console.error("usage: tablm-cli <prompt>  (then interactive mode after)");
-    process.exit(1);
+  const args = process.argv.slice(2);
+
+  // --list: show all saved sessions
+  if (args[0] === "--list" || args[0] === "-l") {
+    const sessions = listSessions();
+    if (sessions.length === 0) {
+      console.log("no saved sessions");
+      process.exit(0);
+    }
+    console.log("saved sessions (newest first):");
+    for (const s of sessions) {
+      const age = s.updated ? new Date(s.updated).toLocaleString() : "?";
+      const msgCount = s.messages?.length ?? 0;
+      const preview = s.prompt?.slice(0, 60) ?? "(no prompt)";
+      console.log(`  ${s.id}  ${age}  ${msgCount} msgs  [${s.cwd}]  "${preview}"`);
+    }
+    process.exit(0);
+  }
+
+  // --resume <id> [optional follow-up prompt]
+  let session: CliSession;
+  let initialPrompt: string;
+
+  if (args[0] === "--resume" || args[0] === "-r") {
+    const id = args[1];
+    if (!id) {
+      console.error("usage: tablm-cli --resume <session-id> [follow-up prompt]");
+      process.exit(1);
+    }
+    const loaded = loadSession(id);
+    if (!loaded) {
+      console.error(`session not found: ${id}`);
+      console.error("run: tablm-cli --list");
+      process.exit(1);
+    }
+    session = loaded;
+    initialPrompt = args.slice(2).join(" ") || "continue";
+    process.stderr.write(`[resume] session ${id} (${session.messages.length} messages, cwd: ${session.cwd})\n`);
+  } else {
+    initialPrompt = args.join(" ");
+    if (!initialPrompt) {
+      console.error("usage:");
+      console.error("  tablm-cli <prompt>              start new session");
+      console.error("  tablm-cli --list                list saved sessions");
+      console.error("  tablm-cli --resume <id> [msg]   resume session");
+      process.exit(1);
+    }
+    const now = new Date().toISOString();
+    session = {
+      id: genSessionId(),
+      created: now,
+      updated: now,
+      cwd: process.cwd(),
+      model: MODEL,
+      prompt: initialPrompt,
+      messages: [],
+    };
   }
 
   const systemPrompt = `You are an autonomous coding agent. You have tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, BrowserNavigate, BrowserSnapshot, BrowserClick, BrowserFill, BrowserScreenshot, BrowserEval.
@@ -523,18 +627,24 @@ CRITICAL RULES:
 2. No preamble, no "I will now...", no "Let me...". Call the tool IMMEDIATELY.
 3. If a task needs multiple steps, call tools for ALL steps in ONE response (multiple tool_use blocks).
 4. Only output text when you have the FINAL answer (after all tools executed).
-5. Work in ${process.cwd()}.
+5. Work in ${session.cwd}.
 6. When the task is complete, output only "DONE" + brief summary.
 7. Use WebSearch for looking up info. Use WebFetch to read a URL. Use Browser* tools to interact with web pages (click, fill forms, navigate, screenshot, eval JS).
 8. Browser workflow: BrowserNavigate to open page -> BrowserSnapshot to see structure -> BrowserClick/BrowserFill to interact -> BrowserScreenshot to verify.`;
 
-  const messages: any[] = [{ role: "user", content: initialPrompt }];
+  const messages = session.messages;
+  if (messages.length === 0) {
+    messages.push({ role: "user", content: initialPrompt });
+  } else {
+    messages.push({ role: "user", content: initialPrompt });
+  }
 
   // Run initial prompt
   await runTurn(messages);
+  saveSession(session);
 
   // Interactive REPL: keep same session, accept follow-up prompts
-  process.stderr.write(`\n=== session mode (cwd: ${process.cwd()}) - type follow-up or Ctrl-D to exit ===\n`);
+  process.stderr.write(`\n=== session ${session.id} (cwd: ${session.cwd}) - type follow-up or Ctrl-D to exit ===\n`);
   const readline = await import("node:readline/promises");
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
   while (true) {
@@ -550,9 +660,12 @@ CRITICAL RULES:
     if (line === "exit" || line === "quit") break;
     messages.push({ role: "user", content: line });
     await runTurn(messages);
+    saveSession(session);
   }
   rl.close();
+  saveSession(session);
   await closeScratchPage();
+  process.stderr.write(`[session ${session.id} saved]\n`);
 }
 
 main().catch(async (e) => {
