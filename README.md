@@ -11,6 +11,57 @@ Claude Code ──(Anthropic API)──> Gateway :8788 ──(CDP)──> Chrome
 - **Session mapping**: each site keeps one live web conversation; only the message delta is sent after the first turn.
 - **Auto-launch**: Chrome with a dedicated debug profile starts automatically on first use (Chrome 136+ forbids CDP on the default profile).
 
+## Architecture
+
+Two clients can drive the same gateway:
+
+### Claude Code (MCP mode)
+
+```
+Claude Code ──(Anthropic API)──> Gateway :8788 ──(CDP)──> Chrome ──> web chat
+```
+
+Claude Code sends 100+ tools and its full system prompt. The gateway forwards them to the web model, which returns ```tooluse``` blocks. The gateway translates those into Anthropic `tool_use` SSE events. Claude Code executes the tools locally and sends `tool_result` back. The gateway pastes the result into the web chat as the next message; the model reads it and continues.
+
+### tablm-cli (lean agent mode)
+
+`tablm-cli` is a minimal autonomous agent that ships with tablm. It exposes only 6 tools (Bash, Read, Write, Edit, Grep, Glob) and a short system prompt, so the prompt sent to the web model is ~95% smaller than Claude Code's. It runs in a REPL: the first prompt is a CLI arg, follow-up prompts keep the same session (same `messages[]`, same web chat conversation).
+
+```
+tablm-cli (agent)          gateway (translator)         web chat (model)
+     │                          │                            │
+     │── user prompt ──────────>│                            │
+     │   + 6 tools schema        │── paste prompt ───────────>│
+     │                          │   + tool protocol block     │
+     │                          │<── text streaming ──────────│
+     │                          │    (may contain ```tooluse```)│
+     │<── SSE: tool_use block ──│                            │
+     │                          │                            │
+     │── execute Bash locally   │                            │
+     │<── result string         │                            │
+     │                          │                            │
+     │── tool_result ──────────>│── paste result ───────────>│
+     │                          │<── text/tooluse ────────────│
+     │                          │                            │
+     │<── SSE: final text ─────│                            │
+```
+
+Key points:
+- The web model has no real tool API. The gateway injects a `[Tool use protocol]` text block that teaches the model to emit ```tooluse {"name":"Bash","input":{...}}``` fenced blocks.
+- The gateway parses those blocks and emits Anthropic `tool_use` SSE events.
+- `tablm-cli` executes the tool locally and sends `tool_result` back. The gateway pastes it into the same web chat conversation (session mapping in `~/.tablm/sessions.json`), so the model sees the result as the next message and continues.
+- Each tool round-trip is one web chat call (8-30s latency). 10 tool calls = 10 web calls = 2-5 minutes.
+
+Usage:
+
+```bash
+tablm-cli "read HANDOFF.md and continue the loop"
+> grep for X in the findings index      # follow-up, same session
+> exit
+```
+
+Env: `TABLM_MODEL` (default `web-zai`), `TABLM_MAX_TURNS` (default 50), `TABLM_GATEWAY_URL` (default `http://127.0.0.1:8788`), `TABLM_AUTH_TOKEN` (default `tablm`).
+
 ## Install (any machine)
 
 Requirements: Node.js 18+, git, Google Chrome/Chromium/Edge, [Claude Code](https://claude.com/claude-code) CLI.
