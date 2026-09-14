@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
+import { openTab, Page as CdpPage, listTargets, ensureChrome } from "./cdp.js";
 
 const GATEWAY = process.env.TABLM_GATEWAY_URL || "http://127.0.0.1:8788";
 const AUTH_TOKEN = process.env.TABLM_AUTH_TOKEN || "tablm";
@@ -103,6 +104,107 @@ const tools: Tool[] = [
           resolve(stdout || "(no files)");
         });
       });
+    },
+  },
+  {
+    name: "WebSearch",
+    description: "Search the web via Google using Chrome DevTools Protocol. Returns top results with title, URL, and snippet. Use for looking up docs, APIs, error messages, or current information.",
+    input_schema: { type: "object", properties: { query: { type: "string" }, num_results: { type: "number", description: "max results (default 10)" } }, required: ["query"] },
+    run: async (input) => {
+      const query = encodeURIComponent(input.query);
+      const num = input.num_results || 10;
+      try {
+        await ensureChrome();
+        const url = `https://www.google.com/search?q=${query}&num=${num}&hl=en&lr=en`;
+        const target = await openTab(url);
+        const page = await CdpPage.attach(target);
+        await page.navigate(url);
+        await new Promise((r) => setTimeout(r, 3000));
+        const results = await page.evalValue<any[]>(`(() => {
+          // Try to dismiss consent dialog if present
+          const consentBtn = document.querySelector('button#L2AGLb, button#W0wtkc, div[role="button"]');
+          if (consentBtn && /accept|agree|reject|decline/i.test(consentBtn.textContent)) consentBtn.click();
+          const items = [];
+          // Google search result selectors (2024-2026 layout)
+          const blocks = document.querySelectorAll('div.g, div[data-sokoban-container] > div, div.MjjYud > div');
+          for (const block of blocks) {
+            if (items.length >= ${num}) break;
+            const link = block.querySelector('a[href]');
+            if (!link) continue;
+            const href = link.href;
+            if (!href || href.startsWith('https://www.google.com/') || href.startsWith('https://maps.google.com/') || href.includes('google.com/search')) continue;
+            const titleEl = block.querySelector('h3, [role="heading"]');
+            const title = titleEl ? titleEl.textContent.trim() : '';
+            const snippetEl = block.querySelector('div[data-sncf], div[data-snpf], span.aCOpRe, div.VwiC3b, div.IsZvec, div[style*="-webkit-line-clamp"]');
+            const snippet = snippetEl ? snippetEl.textContent.trim().slice(0, 300) : '';
+            if (title || href) items.push({ title, url: href, snippet });
+          }
+          // Fallback: if no results, grab all links with h3
+          if (items.length === 0) {
+            document.querySelectorAll('a:has(h3)').forEach(a => {
+              if (items.length >= ${num}) return;
+              const href = a.href;
+              if (!href || href.startsWith('https://www.google.com/')) return;
+              const h3 = a.querySelector('h3');
+              items.push({ title: h3 ? h3.textContent.trim() : '', url: href, snippet: '' });
+            });
+          }
+          return items;
+        })()`);
+        page.dispose();
+        if (!results || results.length === 0) {
+          // Fallback to DuckDuckGo HTML
+          const ddgUrl = `https://html.duckduckgo.com/html/?q=${query}`;
+          const ddgTarget = await openTab(ddgUrl);
+          const ddgPage = await CdpPage.attach(ddgTarget);
+          await ddgPage.navigate(ddgUrl);
+          await new Promise((r) => setTimeout(r, 3000));
+          const ddgResults = await ddgPage.evalValue<any[]>(`(() => {
+            const items = [];
+            document.querySelectorAll('.result, div.web-result').forEach(block => {
+              if (items.length >= ${num}) return;
+              const link = block.querySelector('a.result__a, a[href]');
+              if (!link) return;
+              const title = link.textContent.trim();
+              const href = link.href;
+              const snippetEl = block.querySelector('.result__snippet, a.result__snippet');
+              const snippet = snippetEl ? snippetEl.textContent.trim().slice(0, 300) : '';
+              if (title) items.push({ title, url: href, snippet });
+            });
+            return items;
+          })()`);
+          ddgPage.dispose();
+          if (ddgResults && ddgResults.length > 0) {
+            return ddgResults.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`).join("\n\n");
+          }
+          return "(no search results found)";
+        }
+        return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`).join("\n\n");
+      } catch (e: any) {
+        return `[error] web search failed: ${e.message}`;
+      }
+    },
+  },
+  {
+    name: "WebFetch",
+    description: "Fetch a web page and extract its text content via Chrome DevTools Protocol. Use for reading documentation pages, API references, or any URL. Returns the page text (truncated to 10000 chars).",
+    input_schema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
+    run: async (input) => {
+      try {
+        await ensureChrome();
+        const target = await openTab(input.url);
+        const page = await CdpPage.attach(target);
+        await page.navigate(input.url);
+        await new Promise((r) => setTimeout(r, 3000));
+        const text = await page.evalValue<string>(`(() => {
+          document.querySelectorAll('script, style, nav, footer, header, aside').forEach(el => el.remove());
+          return document.body ? document.body.innerText.slice(0, 10000) : '(empty page)';
+        })()`);
+        page.dispose();
+        return text || "(empty page)";
+      } catch (e: any) {
+        return `[error] web fetch failed: ${e.message}`;
+      }
     },
   },
 ];
@@ -267,7 +369,7 @@ async function main() {
     process.exit(1);
   }
 
-  const systemPrompt = `You are an autonomous coding agent. You have tools: Bash, Read, Write, Edit, Grep, Glob.
+  const systemPrompt = `You are an autonomous coding agent. You have tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch.
 
 CRITICAL RULES:
 1. DO NOT describe what you will do. DO NOT explain your plan. Just call the tool directly.
@@ -275,7 +377,8 @@ CRITICAL RULES:
 3. If a task needs multiple steps, call tools for ALL steps in ONE response (multiple tool_use blocks).
 4. Only output text when you have the FINAL answer (after all tools executed).
 5. Work in ${process.cwd()}.
-6. When the task is complete, output only "DONE" + brief summary.`;
+6. When the task is complete, output only "DONE" + brief summary.
+7. Use WebSearch for looking up docs, APIs, error messages, or current info. Use WebFetch to read a specific URL.`;
 
   const messages: any[] = [{ role: "user", content: initialPrompt }];
 
