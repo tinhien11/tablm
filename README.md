@@ -13,10 +13,18 @@ Claude Code ──(Anthropic API)──> Gateway :8788 ──(CDP)──> Chrome
 
 ## Install (any machine)
 
-Requirements: Node.js 18+, Google Chrome/Chromium/Edge, [Claude Code](https://claude.com/claude-code) CLI.
+Requirements: Node.js 18+, git, Google Chrome/Chromium/Edge, [Claude Code](https://claude.com/claude-code) CLI.
+
+One command:
 
 ```bash
-git clone <repo-url> && cd web2model
+curl -fsSL https://raw.githubusercontent.com/tinhien11/web2model/main/install.sh | bash
+```
+
+Or manually:
+
+```bash
+git clone https://github.com/tinhien11/web2model.git && cd web2model
 ./install.sh
 w2m-claude
 ```
