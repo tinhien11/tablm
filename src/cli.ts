@@ -415,9 +415,9 @@ interface StreamResult {
   stop_reason: string;
 }
 
-async function callGateway(messages: any[], useTools: boolean): Promise<StreamResult> {
+async function callGateway(messages: any[], useTools: boolean, model: string = MODEL): Promise<StreamResult> {
   const body: any = {
-    model: MODEL,
+    model,
     max_tokens: 8192,
     messages,
     stream: true,
@@ -576,14 +576,15 @@ async function compactSession(session: CliSession, messages: any[]): Promise<voi
 
 // ---------- Main loop ----------
 async function runTurn(session: CliSession, messages: any[]): Promise<boolean> {
+  const model = session.model || MODEL;
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     // Auto-compact if session too long
     await compactSession(session, messages);
 
-    process.stderr.write(`\n--- turn ${turn + 1} ---\n`);
+    process.stderr.write(`\n--- turn ${turn + 1} [${model}] ---\n`);
     let response: StreamResult;
     try {
-      response = await callGateway(messages, true);
+      response = await callGateway(messages, true, model);
     } catch (e: any) {
       console.error(`gateway error: ${e.message}`);
       return false;
@@ -648,6 +649,28 @@ async function main() {
     process.exit(0);
   }
 
+  // --models: list available models
+  if (args[0] === "--models") {
+    console.log("available models:");
+    console.log("  web-zai     chat.z.ai (GLM) - default");
+    console.log("  web-chatgpt chatgpt.com");
+    console.log("  web-kimi    kimi.ai (login required)");
+    process.exit(0);
+  }
+
+  // Parse --model flag (can appear anywhere before prompt)
+  let model = MODEL;
+  const modelIdx = args.indexOf("--model");
+  if (modelIdx !== -1 && args[modelIdx + 1]) {
+    model = args[modelIdx + 1];
+    args.splice(modelIdx, 2);
+  }
+  const mIdx = args.indexOf("-m");
+  if (mIdx !== -1 && args[mIdx + 1]) {
+    model = args[mIdx + 1];
+    args.splice(mIdx, 2);
+  }
+
   // --resume <id> [optional follow-up prompt]
   let session: CliSession;
   let initialPrompt: string;
@@ -672,7 +695,9 @@ async function main() {
     if (!initialPrompt) {
       console.error("usage:");
       console.error("  tablm-cli <prompt>              start new session");
+      console.error("  tablm-cli -m <model> <prompt>    start with specific model");
       console.error("  tablm-cli --list                list saved sessions");
+      console.error("  tablm-cli --models              list available models");
       console.error("  tablm-cli --resume <id> [msg]   resume session");
       process.exit(1);
     }
@@ -682,7 +707,7 @@ async function main() {
       created: now,
       updated: now,
       cwd: process.cwd(),
-      model: MODEL,
+      model,
       prompt: initialPrompt,
       messages: [],
     };
