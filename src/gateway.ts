@@ -251,11 +251,18 @@ async function askWithMalformedRetry(
   // Do NOT retry just because "tooluse" appears in prose ("I will use tooluse to...")
   const hasTooluseFence = /```tooluse/i.test(result.text);
   const hallucinatingResult = /\[tool_result\s/i.test(result.text);
-  if (!hasTooluseFence && !hallucinatingResult) return result;
-  console.log(`[gateway] ${site} malformed tool call detected (${hallucinatingResult ? "hallucinated tool_result" : "broken tooluse fence"}) - asking the model to redo it`);
+  // Detect ChatGPT-style refusal: describes action instead of calling tool
+  const refusesToCall = /\b(I[''']ll (use|try|open|navigate|click|send)|I will (use|try|open|navigate|click|send)|let me (use|try|open|navigate|click|send)|I can[''']t|cannot |unable to |Work mode|Cloud Browser|switch to)\b/i.test(result.text);
+  if (!hasTooluseFence && !hallucinatingResult && !refusesToCall) return result;
+  if (!hasTooluseFence && !hallucinatingResult) {
+    // Pure prose refusal — retry with stronger correction
+    console.log(`[gateway] ${site} model described action instead of calling tool - retrying with correction`);
+  } else {
+    console.log(`[gateway] ${site} malformed tool call detected (${hallucinatingResult ? "hallucinated tool_result" : "broken tooluse fence"}) - asking the model to redo it`);
+  }
   const correction =
     prompt +
-    "\n\n[System correction] Your previous reply was NOT a valid tool call. To call a tool, output EXACTLY one fenced block:\n```tooluse\n{\"name\": \"ToolName\", \"input\": { ... }}\n```\nwith a real tool name from the list and its input object. Output that block now and nothing else. Do NOT output [tool_result ...] - that is what the system sends back to you after you call a tool.";
+    "\n\n[System correction] You described what you would do instead of DOING it. You are NOT using your built-in tools. You are generating TEXT for a parser. To call a tool, output EXACTLY this text block and NOTHING ELSE:\n```tooluse\n{\"name\": \"ToolName\", \"input\": { ... }}\n```\nDo NOT say \"I'll use\" or \"I will\" or \"let me\". Do NOT explain. Do NOT mention Work mode or Cloud Browser. Just output the ```tooluse``` block. Output it NOW.";
   const retry = await askSite(site, correction, { ...opts, newChat: false });
   const retryParsed = parseToolCalls(retry.text || "");
   if (retryParsed.calls.length > 0 && retry.status === "done") return retry;
