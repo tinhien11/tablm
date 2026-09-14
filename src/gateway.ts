@@ -274,8 +274,35 @@ async function askWithMalformedRetry(
   opts: { newChat: boolean; session?: string; timeoutS: number },
   hasTools: boolean
 ) {
-  const result = await askSite(site, prompt, opts);
+  let result = await askSite(site, prompt, opts);
   if (!hasTools || !result.text || result.status !== "done") return result;
+
+  // Check for truncated JSON tool call (web chat cut off mid-JSON)
+  // Pattern: text contains {"name": "...", "input": ... but no matching closing }
+  const hasIncompleteJson = /json\s*\n?\s*\{\s*"name"\s*:\s*"/i.test(result.text) && !parseToolCalls(result.text).calls.length;
+  if (hasIncompleteJson && result.text.length < 100000) {
+    // Try to detect if JSON is truly incomplete (has opening { with "name" but no closing })
+    const start = result.text.indexOf("{", result.text.search(/json\s*\n?\s*\{/i) >= 0 ? result.text.search(/json\s*\n?\s*\{/i) : 0);
+    if (start >= 0) {
+      const obj = extractJsonObject(result.text, start);
+      if (!obj) {
+        // JSON is truncated — ask model to continue
+        console.log(`[gateway] ${site} truncated JSON tool call detected (len=${result.text.length}) - asking model to continue`);
+        const continuation = "Continue. Your previous response was cut off. Output ONLY the remaining part of the JSON tool call, starting from where it stopped. Do NOT repeat the beginning.";
+        const cont = await askSite(site, continuation, { ...opts, newChat: false });
+        if (cont.text && cont.status === "done") {
+          // Merge: append continuation to original
+          const merged = result.text + cont.text;
+          const mergedParsed = parseToolCalls(merged);
+          if (mergedParsed.calls.length > 0) {
+            result.text = merged;
+            return result;
+          }
+        }
+      }
+    }
+  }
+
   const { calls } = parseToolCalls(result.text);
   if (calls.length > 0) return result;
   // Only retry on REAL malformed attempts: hallucinated tool_result, or ```tooluse``` fence with broken JSON
@@ -349,7 +376,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
     clearInterval(ping);
     const { calls, cleanText } = parseToolCalls(result.text || "");
     if (body.tools?.length && !calls.length && result.text) {
-      console.log(`[gateway] ${site} parse debug: text=${JSON.stringify(result.text.slice(0, 300))} calls=${calls.length}`);
+      console.log(`[gateway] ${site} parse debug: len=${result.text.length} text=${JSON.stringify(result.text.slice(0, 300))} calls=${calls.length}`);
     }
     let index = 0;
     if (result.thinking) {
