@@ -509,9 +509,77 @@ async function callGateway(messages: any[], useTools: boolean): Promise<StreamRe
   return { content, stop_reason: stopReason };
 }
 
+// ---------- Session compaction ----------
+const COMPACT_THRESHOLD_CHARS = 50000; // compact when messages[] exceeds this
+const COMPACT_KEEP_RECENT = 6; // keep last N messages after compaction
+
+function messagesCharCount(messages: any[]): number {
+  let total = 0;
+  for (const msg of messages) {
+    if (typeof msg.content === "string") {
+      total += msg.content.length;
+    } else if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block.type === "text") total += block.text?.length ?? 0;
+        else if (block.type === "tool_use") total += JSON.stringify(block.input ?? {}).length;
+        else if (block.type === "tool_result") total += typeof block.content === "string" ? block.content.length : JSON.stringify(block.content ?? "").length;
+      }
+    }
+  }
+  return total;
+}
+
+async function compactSession(session: CliSession, messages: any[]): Promise<void> {
+  const totalChars = messagesCharCount(messages);
+  if (totalChars < COMPACT_THRESHOLD_CHARS) return;
+
+  process.stderr.write(`\n[compact] session too long (${totalChars} chars) - compacting + new z.ai chat\n`);
+
+  // Build summary of old messages
+  const oldMessages = messages.slice(0, -COMPACT_KEEP_RECENT);
+  const summaryParts: string[] = [];
+  for (const msg of oldMessages) {
+    if (msg.role === "user" && typeof msg.content === "string") {
+      summaryParts.push(`User: ${msg.content.slice(0, 200)}`);
+    } else if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      for (const b of msg.content) {
+        if (b.type === "text" && b.text) summaryParts.push(`Assistant: ${b.text.slice(0, 200)}`);
+        else if (b.type === "tool_use") summaryParts.push(`Assistant called ${b.name}(${JSON.stringify(b.input ?? {}).slice(0, 100)})`);
+      }
+    } else if (msg.role === "user" && Array.isArray(msg.content)) {
+      for (const b of msg.content) {
+        if (b.type === "tool_result") {
+          const c = typeof b.content === "string" ? b.content : JSON.stringify(b.content ?? "");
+          summaryParts.push(`Tool result: ${c.slice(0, 200)}`);
+        }
+      }
+    }
+  }
+
+  const summary = `[Session compacted. Previous conversation summary:\n${summaryParts.join("\n")}\nEnd of summary. Continue from here.]`;
+
+  // Keep last few messages + prepend summary
+  const recent = messages.slice(-COMPACT_KEEP_RECENT);
+  messages.length = 0;
+  messages.push({ role: "user", content: summary });
+  messages.push(...recent);
+
+  // Clear z.ai session so gateway starts fresh chat
+  try {
+    const sessionsFile = path.join(homedir(), ".tablm", "sessions.json");
+    writeFileSync(sessionsFile, "{}");
+  } catch {}
+
+  process.stderr.write(`[compact] done - ${messages.length} messages, ${messagesCharCount(messages)} chars, new z.ai chat\n`);
+  saveSession(session);
+}
+
 // ---------- Main loop ----------
-async function runTurn(messages: any[]): Promise<boolean> {
+async function runTurn(session: CliSession, messages: any[]): Promise<boolean> {
   for (let turn = 0; turn < MAX_TURNS; turn++) {
+    // Auto-compact if session too long
+    await compactSession(session, messages);
+
     process.stderr.write(`\n--- turn ${turn + 1} ---\n`);
     let response: StreamResult;
     try {
@@ -640,7 +708,7 @@ CRITICAL RULES:
   }
 
   // Run initial prompt
-  await runTurn(messages);
+  await runTurn(session, messages);
   saveSession(session);
 
   // Interactive REPL: keep same session, accept follow-up prompts
@@ -659,7 +727,7 @@ CRITICAL RULES:
     if (!line) continue;
     if (line === "exit" || line === "quit") break;
     messages.push({ role: "user", content: line });
-    await runTurn(messages);
+    await runTurn(session, messages);
     saveSession(session);
   }
   rl.close();
