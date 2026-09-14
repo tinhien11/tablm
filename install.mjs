@@ -31,15 +31,17 @@ function writeLauncher(name, body) {
 
 function gatewayBody() {
   const gw = path.join(dist, "gateway.js");
+  const nodeBin = process.execPath;
   return isWin
-    ? `@echo off\nif not exist "${cfgDir}" mkdir "${cfgDir}"\nnode "${gw}" %* >> "${logFile}" 2>&1\n`
-    : `#!/usr/bin/env bash\nmkdir -p "${cfgDir}"\nexec node "${gw}" "$@" >> "${logFile}" 2>&1\n`;
+    ? `@echo off\nif not exist "${cfgDir}" mkdir "${cfgDir}"\n"${nodeBin}" "${gw}" %* >> "${logFile}" 2>&1\n`
+    : `#!/usr/bin/env bash\nmkdir -p "${cfgDir}"\nexport PATH="${path.dirname(process.execPath)}:$PATH"\nexec "${nodeBin}" "${gw}" "$@" >> "${logFile}" 2>&1\n`;
 }
 
 function claudeBody() {
+  const nodeBinDir = path.dirname(process.execPath);
   return isWin
     ? `@echo off\nset "ANTHROPIC_BASE_URL=http://127.0.0.1:8788"\nset "ANTHROPIC_AUTH_TOKEN=tablm"\nset "ANTHROPIC_MODEL=web-chatgpt"\nclaude %*\n`
-    : `#!/usr/bin/env bash\nexport ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-http://127.0.0.1:8788}"\nexport ANTHROPIC_AUTH_TOKEN="\${ANTHROPIC_AUTH_TOKEN:-tablm}"\nexport ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-web-chatgpt}"\nexec claude "$@"\n`;
+    : `#!/usr/bin/env bash\nexport PATH="${nodeBinDir}:$PATH"\nexport ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-http://127.0.0.1:8788}"\nexport ANTHROPIC_AUTH_TOKEN="\${ANTHROPIC_AUTH_TOKEN:-tablm}"\nexport ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-web-chatgpt}"\nexec claude "$@"\n`;
 }
 
 function statusBody() {
