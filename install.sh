@@ -27,13 +27,13 @@ if [ ! -f "$DIR/package.json" ] || [ "${WEB2MODEL_FRESH_CLONE:-0}" = "1" ]; then
 fi
 cd "$DIR"
 
-echo "[1/5] Installing dependencies"
+echo "[1/6] Installing dependencies"
 npm install --silent
 
-echo "[2/5] Building"
+echo "[2/6] Building"
 npm run build --silent
 
-echo "[3/5] Registering MCP server with Claude Code"
+echo "[3/6] Registering MCP server with Claude Code"
 if command -v claude >/dev/null 2>&1; then
   claude mcp remove tablm >/dev/null 2>&1 || true
   claude mcp add -s user tablm -- node "$PWD/dist/index.js" 2>/dev/null ||
@@ -44,7 +44,7 @@ else
   echo "    claude mcp add -s user tablm -- node $PWD/dist/index.js"
 fi
 
-echo "[4/5] Installing gateway launcher + autostart"
+echo "[4/6] Installing gateway launcher + autostart"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
 mkdir -p "$BIN_DIR" "$APP_DIR" "$HOME/.config/autostart"
@@ -80,7 +80,24 @@ mkdir -p "$HOME/.web2model"
 tail -n 50 -f "$HOME/.web2model/gateway.log"
 EOF
 chmod 755 "$BIN_DIR/tablm-logs"
-cat > "$HOME/.config/autostart/tablm-gateway.desktop" <<EOF
+if systemctl --user status 2>/dev/null | grep -q "State:"; then
+  SYSTEMD_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$SYSTEMD_DIR"
+  cat > "$SYSTEMD_DIR/tablm-gateway.service" <<EOF
+[Unit]
+Description=tablm gateway (web AI chats as Anthropic-compatible model)
+[Service]
+ExecStart=$BIN_DIR/tablm-gateway
+Restart=on-failure
+RestartSec=3
+[Install]
+WantedBy=default.target
+EOF
+  systemctl --user daemon-reload
+  systemctl --user enable --now tablm-gateway.service >/dev/null 2>&1 || true
+  echo "  systemd user service: tablm-gateway (enabled)"
+else
+  cat > "$HOME/.config/autostart/tablm-gateway.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=tablm Gateway
@@ -89,9 +106,27 @@ Exec=$BIN_DIR/tablm-gateway
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
-update-desktop-database "$APP_DIR" 2>/dev/null || true
+  update-desktop-database "$APP_DIR" 2>/dev/null || true
+  echo "  .desktop autostart installed"
+fi
 
-echo "[5/5] Checking Chrome"
+echo "[5/6] Starting gateway now"
+if curl -s --max-time 3 http://127.0.0.1:8788/health >/dev/null 2>&1; then
+  echo "  already running on :8788"
+else
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user is-enabled tablm-gateway.service >/dev/null 2>&1; then
+    systemctl --user restart tablm-gateway.service 2>/dev/null || nohup "$BIN_DIR/tablm-gateway" >/dev/null 2>&1 &
+  else
+    nohup "$BIN_DIR/tablm-gateway" >/dev/null 2>&1 &
+  fi
+  for _ in $(seq 1 20); do
+    sleep 0.5
+    curl -s --max-time 2 http://127.0.0.1:8788/health >/dev/null 2>&1 && break
+  done
+  curl -s --max-time 3 http://127.0.0.1:8788/health >/dev/null 2>&1 && echo "  running on :8788" || echo "  WARNING: not up yet - check tablm-logs"
+fi
+
+echo "[6/6] Checking Chrome"
 CHROME_OK=0
 for c in google-chrome-stable google-chrome chromium-browser chromium brave-browser microsoft-edge; do
   if command -v "$c" >/dev/null 2>&1; then CHROME_OK=1; echo "  found: $c"; break; fi
