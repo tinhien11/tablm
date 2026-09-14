@@ -4,12 +4,40 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
-import { openTab, Page as CdpPage, listTargets, ensureChrome } from "./cdp.js";
+import { openTab, Page as CdpPage, listTargets, ensureChrome, closeTab } from "./cdp.js";
 
 const GATEWAY = process.env.TABLM_GATEWAY_URL || "http://127.0.0.1:8788";
 const AUTH_TOKEN = process.env.TABLM_AUTH_TOKEN || "tablm";
 const MODEL = process.env.TABLM_MODEL || "web-zai";
 const MAX_TURNS = Number(process.env.TABLM_MAX_TURNS || 50);
+
+// ---------- Scratch tab manager (1 tab per CLI session) ----------
+let scratchPage: CdpPage | null = null;
+
+async function getScratchPage(url: string): Promise<CdpPage> {
+  if (scratchPage) {
+    try {
+      await scratchPage.evalValue("1");
+      await scratchPage.navigate(url);
+      return scratchPage;
+    } catch {
+      try { await scratchPage.close(); } catch {}
+      scratchPage = null;
+    }
+  }
+  await ensureChrome();
+  const target = await openTab(url);
+  scratchPage = await CdpPage.attach(target);
+  await scratchPage.navigate(url);
+  return scratchPage;
+}
+
+async function closeScratchPage(): Promise<void> {
+  if (scratchPage) {
+    try { await scratchPage.close(); } catch {}
+    scratchPage = null;
+  }
+}
 
 // ---------- Tools ----------
 interface Tool {
@@ -114,11 +142,8 @@ const tools: Tool[] = [
       const query = encodeURIComponent(input.query);
       const num = input.num_results || 10;
       try {
-        await ensureChrome();
         const url = `https://www.google.com/search?q=${query}&num=${num}&hl=en&lr=en`;
-        const target = await openTab(url);
-        const page = await CdpPage.attach(target);
-        await page.navigate(url);
+        const page = await getScratchPage(url);
         await new Promise((r) => setTimeout(r, 3000));
         const results = await page.evalValue<any[]>(`(() => {
           // Try to dismiss consent dialog if present
@@ -151,13 +176,10 @@ const tools: Tool[] = [
           }
           return items;
         })()`);
-        page.dispose();
         if (!results || results.length === 0) {
           // Fallback to DuckDuckGo HTML
           const ddgUrl = `https://html.duckduckgo.com/html/?q=${query}`;
-          const ddgTarget = await openTab(ddgUrl);
-          const ddgPage = await CdpPage.attach(ddgTarget);
-          await ddgPage.navigate(ddgUrl);
+          const ddgPage = await getScratchPage(ddgUrl);
           await new Promise((r) => setTimeout(r, 3000));
           const ddgResults = await ddgPage.evalValue<any[]>(`(() => {
             const items = [];
@@ -173,7 +195,6 @@ const tools: Tool[] = [
             });
             return items;
           })()`);
-          ddgPage.dispose();
           if (ddgResults && ddgResults.length > 0) {
             return ddgResults.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`).join("\n\n");
           }
@@ -191,16 +212,12 @@ const tools: Tool[] = [
     input_schema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
     run: async (input) => {
       try {
-        await ensureChrome();
-        const target = await openTab(input.url);
-        const page = await CdpPage.attach(target);
-        await page.navigate(input.url);
+        const page = await getScratchPage(input.url);
         await new Promise((r) => setTimeout(r, 3000));
         const text = await page.evalValue<string>(`(() => {
           document.querySelectorAll('script, style, nav, footer, header, aside').forEach(el => el.remove());
           return document.body ? document.body.innerText.slice(0, 10000) : '(empty page)';
         })()`);
-        page.dispose();
         return text || "(empty page)";
       } catch (e: any) {
         return `[error] web fetch failed: ${e.message}`;
@@ -404,9 +421,11 @@ CRITICAL RULES:
     await runTurn(messages);
   }
   rl.close();
+  await closeScratchPage();
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error(e);
+  await closeScratchPage();
   process.exit(1);
 });

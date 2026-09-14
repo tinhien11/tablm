@@ -148,6 +148,12 @@ export async function openTab(url: string): Promise<Target> {
   return (await CDPAny.New({ ...cdpOpts, url })) as Target;
 }
 
+export async function closeTab(targetId: string): Promise<void> {
+  try {
+    await CDPAny.Close({ ...cdpOpts, id: targetId });
+  } catch {}
+}
+
 export class Page {
   private client: any;
   readonly targetId: string;
@@ -211,5 +217,10 @@ export class Page {
     try {
       this.client.close();
     } catch {}
+  }
+
+  async close(): Promise<void> {
+    this.dispose();
+    await closeTab(this.targetId);
   }
 }
