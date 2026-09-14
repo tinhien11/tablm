@@ -26,10 +26,10 @@ Or manually:
 ```bash
 git clone https://github.com/tinhien11/tablm.git && cd tablm
 ./install.sh
-w2m-claude
+tablm
 ```
 
-`install.sh` does everything: installs dependencies, builds, registers the MCP server with Claude Code (user scope), installs the gateway autostart entry and the `w2m-claude` / `w2m-gateway` launchers.
+`install.sh` does everything: installs dependencies, builds, registers the MCP server with Claude Code (user scope), installs the gateway autostart entry and the `tablm` / `tablm-gateway` launchers.
 
 First run: a dedicated Chrome window opens (`~/.tablm/chrome-profile`). Sign in to the sites you want once - cookies persist.
 

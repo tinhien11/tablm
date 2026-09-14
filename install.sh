@@ -48,24 +48,24 @@ echo "[4/5] Installing gateway launcher + autostart"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
 mkdir -p "$BIN_DIR" "$APP_DIR" "$HOME/.config/autostart"
-rm -f "$BIN_DIR/w2m-chrome" "$APP_DIR/tablm.desktop" "$HOME/.config/autostart/tablm-chrome.desktop"
-cat > "$BIN_DIR/w2m-gateway" <<EOF
+rm -f "$BIN_DIR/w2m-chrome" "$BIN_DIR/w2m-claude" "$BIN_DIR/w2m-gateway" "$APP_DIR/tablm.desktop" "$HOME/.config/autostart/tablm-chrome.desktop"
+cat > "$BIN_DIR/tablm-gateway" <<EOF
 #!/usr/bin/env bash
 exec node "$DIR/dist/gateway.js" "$@" >> "$HOME/.web2model/gateway.log" 2>&1
 EOF
-chmod 755 "$BIN_DIR/w2m-gateway"
-cat > "$BIN_DIR/w2m-claude" <<EOF
+chmod 755 "$BIN_DIR/tablm-gateway"
+cat > "$BIN_DIR/tablm" <<EOF
 #!/usr/bin/env bash
 export ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-http://127.0.0.1:8788}"
 export ANTHROPIC_AUTH_TOKEN="\${ANTHROPIC_AUTH_TOKEN:-tablm}"
 export ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-web-chatgpt}"
 exec claude "\$@"
 EOF
-chmod 755 "$BIN_DIR/w2m-claude"
+chmod 755 "$BIN_DIR/tablm"
 cat > "$BIN_DIR/tablm-status" <<'EOF'
 #!/usr/bin/env bash
 echo "== gateway =="
-curl -s --max-time 3 http://127.0.0.1:8788/health || echo "gateway DOWN (start: w2m-gateway &)"
+curl -s --max-time 3 http://127.0.0.1:8788/health || echo "gateway DOWN (start: tablm-gateway &)"
 echo
 echo "== chrome (CDP :9222) =="
 curl -s --max-time 3 http://127.0.0.1:9222/json/version >/dev/null 2>&1 && echo "up" || echo "not running (auto-launches on first ask)"
@@ -85,7 +85,7 @@ cat > "$HOME/.config/autostart/tablm-gateway.desktop" <<EOF
 Type=Application
 Name=tablm Gateway
 Comment=Anthropic-compatible gateway backed by web AI chats (auto-opens Chrome on first ask)
-Exec=$BIN_DIR/w2m-gateway
+Exec=$BIN_DIR/tablm-gateway
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
@@ -104,12 +104,12 @@ echo
 echo "============================================================"
 echo " tablm installed. Next steps:"
 echo
-echo "   1. Run:            w2m-claude"
+echo "   1. Run:            tablm"
 echo "      (a Chrome window opens on first use - sign in to"
 echo "       chatgpt.com / chat.z.ai / kimi.ai once, cookies persist)"
 echo
 echo "   2. Model ids:      web-chatgpt | web-zai | web-kimi"
-echo "      switch with:    w2m-claude --model web-zai"
+echo "      switch with:    tablm --model web-zai"
 echo
 echo "   Useful commands:"
 echo "     tablm-status    gateway + Chrome + sites health"
