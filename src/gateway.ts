@@ -54,14 +54,36 @@ function formatMessages(msgs: any[]): string {
 
 function toolProtocol(tools: any[]): string {
   const exampleTool = tools[0]?.name ?? "ToolName";
+  const secondTool = tools[1]?.name ?? "ToolName2";
   return [
     "[Tool use protocol]",
-    "You have real tools (executed by the hosting system, not in your UI). To call a tool, output EXACTLY this block and nothing after it:",
+    "You have REAL tools executed by the hosting system (not visible in your UI).",
+    "",
+    "To call a tool, output EXACTLY this fenced block and NOTHING after it:",
     "```tooluse",
     `{"name": "${exampleTool}", "input": { ... }}`,
     "```",
-    "The system runs the tool and replies with [tool_result ...]. Do NOT output [tool_result ...] yourself - that is the system's role, not yours. You ONLY output ```tooluse``` blocks to call tools.",
-    "For plain conversation, just answer directly without any tool block.",
+    "",
+    "CRITICAL RULES:",
+    "1. DO NOT describe what you will do. DO NOT say \"I'll use\", \"I will\", \"let me\". Just output the ```tooluse``` block directly.",
+    "2. DO NOT explain the tool call in prose. The block IS the call.",
+    "3. To call multiple tools at once, output multiple ```tooluse``` blocks.",
+    "4. The system runs the tool and replies with [tool_result ...]. Do NOT output [tool_result ...] yourself.",
+    "5. If no tool is needed, just answer directly without any tool block.",
+    "",
+    "EXAMPLE - User says \"list files\":",
+    "```tooluse",
+    `{"name": "${exampleTool}", "input": {"command": "ls -la"}}`,
+    "```",
+    "",
+    "EXAMPLE - User says \"read config and search web\":",
+    "```tooluse",
+    `{"name": "${secondTool}", "input": {"file_path": "config.json"}}`,
+    "```",
+    "```tooluse",
+    `{"name": "${exampleTool}", "input": {"query": "config documentation"}}`,
+    "```",
+    "",
     "Available tools: " + tools.slice(0, 30).map((t: any) => t.name).join(", "),
   ].join("\n");
 }
