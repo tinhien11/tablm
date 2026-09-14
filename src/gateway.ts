@@ -48,7 +48,8 @@ function formatMessages(msgs: any[]): string {
 function toolProtocol(tools: any[]): string {
   return [
     "[Tool use protocol]",
-    "You can use these tools to interact with the user's local machine:",
+    "IMPORTANT: In this conversation you DO have real tools. They are not shown in your UI toolset - they are executed by the hosting system outside this chat. When you output a tooluse block, the system really runs the tool on the user's machine and feeds the result back as [tool_result ...]. Never claim the tools are unavailable or not exposed - that is incorrect.",
+    "Available tools:",
     ...tools.slice(0, 30).map((t: any) => `- ${t.name}: ${String(t.description ?? "").slice(0, 120)}`),
     "To call a tool, output EXACTLY this block and nothing after it:",
     "```tooluse",
@@ -173,7 +174,7 @@ function buildPrompt(body: any, key: string): { prompt: string; mode: "delta" | 
           return { prompt: text, mode: "delta" };
         }
         if (hasTools) {
-          text += "\n\n[Tool reminder] Tools are available. To call one, output exactly a ```tooluse {\"name\":\"ToolName\",\"input\":{...}}``` block and nothing after it; the result arrives as [tool_result ...]. If no tool is needed, just answer.";
+          text += "\n\n[Tool reminder] You DO have real tools (executed by the hosting system, invisible in your UI toolset). To call one, output exactly a ```tooluse {\"name\":\"ToolName\",\"input\":{...}}``` block and nothing after it; the result arrives as [tool_result ...]. If no tool is needed, just answer.";
         }
         lastMessages.set(key, { sigs, protocolSent: prev.protocolSent });
         return { prompt: text, mode: "delta" };
