@@ -723,7 +723,8 @@ CRITICAL RULES:
 5. Work in ${session.cwd}.
 6. When the task is complete, output only "DONE" + brief summary.
 7. Use WebSearch for looking up info. Use WebFetch to read a URL. Use Browser* tools to interact with web pages (click, fill forms, navigate, screenshot, eval JS).
-8. Browser workflow: BrowserNavigate to open page -> BrowserSnapshot to see structure -> BrowserClick/BrowserFill to interact -> BrowserScreenshot to verify.`;
+8. Browser workflow: BrowserNavigate to open page -> BrowserSnapshot to see structure -> BrowserClick/BrowserFill to interact -> BrowserScreenshot to verify.
+9. For writing files larger than 500 chars, use Bash with heredoc: cat > filepath <<'EOF' ... EOF. Do NOT use Write tool for large files (it gets truncated).`;
 
   const messages = session.messages;
   if (messages.length === 0) {
