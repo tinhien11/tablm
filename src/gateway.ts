@@ -1,6 +1,7 @@
 import http from "node:http";
 import { askSite } from "./driver.js";
 import { SITES } from "./driver.js";
+import { startBridge, submitJob, bridgeConnected } from "./bridge.js";
 
 const MODEL_IDS = Object.keys(SITES).map((id) => `web-${id}`);
 
@@ -365,6 +366,33 @@ const server = http.createServer((req, res) => {
       }
       return;
     }
+    if (req.method === "POST" && path === "/ext/rpc") {
+      let job: any;
+      try {
+        job = {
+          site: body.site,
+          operation: body.operation,
+          prompt: body.prompt,
+          conversation: body.conversation,
+          timeoutS: body.timeout_s,
+        };
+      } catch {}
+      submitJob(job)
+        .then((r) => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(r));
+        })
+        .catch((e) => {
+          res.writeHead(502, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+        });
+      return;
+    }
+    if (req.method === "GET" && path === "/ext/status") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ connected: bridgeConnected() }));
+      return;
+    }
     if (req.method === "GET" && (path === "/" || path === "/health")) {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true, service: "tablm-gateway", sites: MODEL_IDS }));
@@ -375,6 +403,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
+startBridge();
 server.listen(PORT, HOST, () => {
   console.log(`tablm gateway listening on http://${HOST}:${PORT}`);
   console.log(`use with: ANTHROPIC_BASE_URL=http://${HOST}:${PORT} ANTHROPIC_AUTH_TOKEN=tablm claude --model web-chatgpt`);

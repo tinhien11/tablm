@@ -158,8 +158,12 @@ export class Page {
   }
 
   static async attach(target: Target): Promise<Page> {
-    const client = target.webSocketDebuggerUrl
-      ? await CDPAny({ target: target.webSocketDebuggerUrl })
+    let wsUrl = target.webSocketDebuggerUrl;
+    if (wsUrl) {
+      wsUrl = wsUrl.replace(/^(ws:\/\/)[^/]+/, `ws://${cdpOpts.host}:${cdpOpts.port}`);
+    }
+    const client = wsUrl
+      ? await CDPAny({ target: wsUrl })
       : await CDPAny({ ...cdpOpts, target });
     await client.Page.enable();
     await client.Runtime.enable();

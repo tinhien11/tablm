@@ -27,11 +27,14 @@ export interface SiteConfig {
   conversationUrl: (id: string) => string;
   selectors: SiteSelectors;
   defaults: { timeoutMs: number; idleMs: number };
+  extSite?: string;
+  transport?: "cdp" | "extension";
 }
 
 export const SITES: Record<string, SiteConfig> = {
   chatgpt: {
     id: "chatgpt",
+    extSite: "chatgpt",
     label: "ChatGPT (chatgpt.com)",
     hosts: ["chatgpt.com", "chat.openai.com"],
     newChatUrl: "https://chatgpt.com/",
@@ -58,6 +61,7 @@ export const SITES: Record<string, SiteConfig> = {
   },
   kimi: {
     id: "kimi",
+    extSite: "kimi",
     label: "Kimi (kimi.ai)",
     hosts: ["kimi.ai", "kimi.com", "www.kimi.ai", "www.kimi.com", "kimi.moonshot.cn"],
     newChatUrl: "https://www.kimi.ai/",
@@ -108,6 +112,7 @@ export const SITES: Record<string, SiteConfig> = {
   },
   zai: {
     id: "zai",
+    extSite: "glm",
     label: "Z.ai (chat.z.ai)",
     hosts: ["chat.z.ai", "z.ai"],
     newChatUrl: "https://chat.z.ai/",
@@ -291,6 +296,58 @@ export interface AskOptions {
   timeoutS?: number;
 }
 
+function gatewayHttp(): string {
+  return process.env.WEB2MODEL_GATEWAY_HTTP || "http://127.0.0.1:8788";
+}
+
+function transportFor(site: SiteConfig): "cdp" | "extension" {
+  return site.transport ?? ((process.env.WEB2MODEL_TRANSPORT as "cdp" | "extension") || "cdp");
+}
+
+async function extAsk(
+  site: SiteConfig,
+  prompt: string,
+  conversation: { mode: string; conversation_id?: string },
+  timeoutS: number
+): Promise<TurnResult> {
+  const r = await fetch(`${gatewayHttp()}/ext/rpc`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      site: site.extSite ?? site.id,
+      operation: "model.turn",
+      prompt,
+      conversation,
+      timeout_s: Math.ceil(timeoutS / 1000),
+    }),
+  });
+  const body: any = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    return {
+      status: "error",
+      text: "",
+      conversationId: null,
+      error: body.error ?? `extension rpc failed (${r.status})`,
+    };
+  }
+  if (body.type === "job_cancelled") {
+    return {
+      status: "timeout",
+      text: body.text ?? "",
+      conversationId: body.conversationId ?? null,
+      error: "cancelled: " + (body.reason ?? "unknown"),
+    };
+  }
+  if (body.type === "job_error") {
+    return { status: "error", text: "", conversationId: null, error: body.error ?? "extension job failed" };
+  }
+  return {
+    status: "done",
+    text: body.text ?? "",
+    conversationId: body.conversationId ?? null,
+  };
+}
+
 export async function askSite(
   siteId: string,
   prompt: string,
@@ -298,6 +355,21 @@ export async function askSite(
 ): Promise<TurnResult & { site: string; reused: boolean }> {
   const site = resolveSite(siteId);
   const key = opts.session ? `${siteId}:${opts.session}` : siteId;
+  if (transportFor(site) === "extension") {
+    let convId = opts.conversationId;
+    let reused = false;
+    if (!convId && !opts.newChat) {
+      convId = sessions[key] ?? null;
+      reused = Boolean(convId);
+    }
+    const conversation = convId
+      ? { mode: "continue", conversation_id: convId }
+      : { mode: "fresh" };
+    const timeoutS = Math.max(15, Math.ceil((opts.timeoutS ?? site.defaults.timeoutMs / 1000)));
+    const result = await extAsk(site, prompt, conversation, timeoutS);
+    if (result.conversationId) rememberSession(key, result.conversationId);
+    return { ...result, site: siteId, reused };
+  }
   return withLock(key, async () => {
     await requireCdp();
     const page = await ensurePage(site);
@@ -345,10 +417,34 @@ export async function askSite(
 }
 
 export async function listSites(): Promise<unknown> {
-  await requireCdp();
-  const targets = await listTargets();
   const out: Record<string, unknown>[] = [];
+  let bridgeUp = false;
+  try {
+    const r = await fetch(`${gatewayHttp()}/ext/status`, { signal: AbortSignal.timeout(3000) });
+    bridgeUp = (await r.json() as any).connected === true;
+  } catch {}
+  out.push({ extensionBridge: bridgeUp ? "connected" : "disconnected" });
+  let cdpAvailable = true;
+  try {
+    await listTargets();
+  } catch {
+    cdpAvailable = false;
+  }
   for (const site of Object.values(SITES)) {
+    if (transportFor(site) === "extension") {
+      out.push({
+        id: site.id,
+        label: site.label,
+        transport: "extension",
+        ready: bridgeUp,
+      });
+      continue;
+    }
+    if (!cdpAvailable) {
+      out.push({ id: site.id, label: site.label, transport: "cdp", error: "chrome debug port not reachable" });
+      continue;
+    }
+    const targets = await listTargets();
     const tab = targets.find((t) => hostMatches(t.url, site.hosts));
     if (!tab) {
       out.push({ id: site.id, label: site.label, tabOpen: false });

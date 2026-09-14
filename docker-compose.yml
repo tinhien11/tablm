@@ -1,7 +1,7 @@
 services:
   chrome:
-    user: "0:0"
     image: zenika/alpine-chrome:latest
+    user: "0:0"
     command:
       - --headless=new
       - --no-sandbox
@@ -14,14 +14,25 @@ services:
       - chrome-profile:/data
     restart: unless-stopped
 
+  chrome-proxy:
+    image: nginx:alpine
+    network_mode: "service:chrome"
+    volumes:
+      - ./docker/nginx-cdp.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - chrome
+    restart: unless-stopped
+
   gateway:
     build: .
     environment:
-      WEB2MODEL_CDP_URL: http://chrome:9222
+      WEB2MODEL_CDP_URL: http://chrome:9223
+      WEB2MODEL_GATEWAY_HOST: 0.0.0.0
     ports:
       - "8789:8788"
     depends_on:
       - chrome
+      - chrome-proxy
     restart: unless-stopped
 
 volumes:

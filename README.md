@@ -47,6 +47,21 @@ Launchers (`tablm`, `tablm-status`, `tablm-logs`, `tablm-gateway`) are `.cmd` fi
 
 First run: a dedicated Chrome window opens (`~/.web2model/chrome-profile`). Sign in to the sites you want once - cookies persist.
 
+### Extension mode (optional - remote Chrome with your real profile)
+
+For the VM scenario: the gateway runs anywhere (VM/container), and a browser extension drives Chrome on the host machine using its **real profile** (no CDP flags, no separate login). The extension speaks the `fancy-browser/1` protocol and ships battle-tested site adapters (chatgpt, kimi, glm/z.ai, gemini, grok).
+
+1. Start the gateway - the bridge listens on `ws://0.0.0.0:8765` (override with `WEB2MODEL_BRIDGE_PORT`; protect it with `WEB2MODEL_BRIDGE_TOKEN`)
+2. Load the extension in host Chrome: `chrome://extensions` -> Developer mode -> Load unpacked (use the fancy-gpt exported bundle - `fancy-gpt extension export --browser chrome`)
+3. In the extension popup: endpoint `ws://<gateway-ip>:8765` + token -> Connect
+4. Enable the transport - globally (`WEB2MODEL_TRANSPORT=extension`) or per site in `~/.web2model/sites.json`:
+
+```json
+{ "zai": { "transport": "extension" } }
+```
+
+Site mapping over the extension: `chatgpt -> chatgpt`, `kimi -> kimi`, `zai -> glm`.
+
 ## Model ids
 
 | Model | Site | Login |
