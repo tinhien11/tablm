@@ -46,14 +46,19 @@ function formatMessages(msgs: any[]): string {
 }
 
 function toolProtocol(tools: any[]): string {
+  const exampleTool = tools[0]?.name ?? "ToolName";
   return [
     "[Tool use protocol]",
-    "IMPORTANT: In this conversation you DO have real tools. They are not shown in your UI toolset - they are executed by the hosting system outside this chat. When you output a tooluse block, the system really runs the tool on the user's machine and feeds the result back as [tool_result ...]. Never claim the tools are unavailable or not exposed - that is incorrect.",
+    "IMPORTANT: In this conversation you DO have real tools. They are not shown in your UI toolset - they are executed by the hosting system outside this chat. When you output a tooluse block, the system really runs the tool on the user's machine and feeds the result back as [tool_result ...]. Never claim the tools are unavailable or not exposed - that is incorrect. Never output plan JSON or task JSON instead of a tool call.",
     "Available tools:",
     ...tools.slice(0, 30).map((t: any) => `- ${t.name}: ${String(t.description ?? "").slice(0, 120)}`),
     "To call a tool, output EXACTLY this block and nothing after it:",
     "```tooluse",
-    '{"name": "ToolName", "input": { ... }}',
+    `{"name": "${exampleTool}", "input": { ... }}`,
+    "```",
+    `Example - to use ${exampleTool} right now, your ENTIRE reply must be exactly:`,
+    "```tooluse",
+    `{"name": "${exampleTool}", "input": {}}`,
     "```",
     "The tool result will then be provided as [tool_result ...]. Use tools whenever they help; for plain conversation just answer directly without any tool block.",
   ].join("\n");
@@ -201,6 +206,27 @@ function sse(res: http.ServerResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
+async function askWithMalformedRetry(
+  site: string,
+  prompt: string,
+  opts: { newChat: boolean; session?: string; timeoutS: number },
+  hasTools: boolean
+) {
+  const result = await askSite(site, prompt, opts);
+  if (!hasTools || !result.text || result.status !== "done") return result;
+  const { calls } = parseToolCalls(result.text);
+  if (calls.length > 0) return result;
+  if (!/tooluse/i.test(result.text)) return result;
+  console.log(`[gateway] ${site} malformed tool call detected - asking the model to redo it`);
+  const correction =
+    prompt +
+    "\n\n[System correction] Your previous reply was NOT a valid tool call. A valid tool call is EXACTLY one fenced block:\n```tooluse\n{\"name\": \"ToolName\", \"input\": { ... }}\n```\nwith a real tool name from the list and its input object. Output that block now and nothing else.";
+  const retry = await askSite(site, correction, { ...opts, newChat: false });
+  const retryParsed = parseToolCalls(retry.text || "");
+  if (retryParsed.calls.length > 0 && retry.status === "done") return retry;
+  return result;
+}
+
 async function handleMessages(body: any, res: http.ServerResponse): Promise<void> {
   const { site, session } = siteFromModel(body.model);
   const sessionKey = `${site}:${session ?? "default"}`;
@@ -235,7 +261,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
     }, 15000);
     let result;
     try {
-      result = await askSite(site, prompt, { newChat: mode === "full", session, timeoutS: 100 });
+      result = await askWithMalformedRetry(site, prompt, { newChat: mode === "full", session, timeoutS: 100 }, Array.isArray(body.tools) && body.tools.length > 0);
     } catch (e) {
       clearInterval(ping);
       const msg = e instanceof Error ? e.message : String(e);
@@ -296,7 +322,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
     return;
   }
   try {
-    const result = await askSite(site, prompt, { newChat: mode === "full", session, timeoutS: 100 });
+    const result = await askWithMalformedRetry(site, prompt, { newChat: mode === "full", session, timeoutS: 100 }, Array.isArray(body.tools) && body.tools.length > 0);
     const { calls, cleanText } = parseToolCalls(result.text || "");
     const text = cleanText || (calls.length ? "" : result.error ? `[tablm ${result.status}] ${result.error}` : "");
     const content: any[] = [];
