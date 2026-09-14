@@ -41,7 +41,7 @@ function claudeBody() {
   const nodeBinDir = path.dirname(process.execPath);
   return isWin
     ? `@echo off\nset "ANTHROPIC_BASE_URL=http://127.0.0.1:8788"\nset "ANTHROPIC_AUTH_TOKEN=tablm"\nset "ANTHROPIC_MODEL=web-chatgpt"\nclaude %*\n`
-    : `#!/usr/bin/env bash\nexport PATH="${nodeBinDir}:$PATH"\nexport ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-http://127.0.0.1:8788}"\nexport ANTHROPIC_AUTH_TOKEN="\${ANTHROPIC_AUTH_TOKEN:-tablm}"\nexport ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-web-chatgpt}"\nexec claude "$@"\n`;
+    : `#!/usr/bin/env bash\nexport PATH="${nodeBinDir}:$PATH"\nexport ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-http://127.0.0.1:8788}"\nexport ANTHROPIC_AUTH_TOKEN="\${ANTHROPIC_AUTH_TOKEN:-tablm}"\nexport ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-web-zai}"\nexec claude "$@"\n`;
 }
 
 function statusBody() {

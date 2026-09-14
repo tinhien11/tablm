@@ -195,7 +195,7 @@ function siteFromModel(model: string | undefined): { site: string; session?: str
   const m = String(model ?? "");
   const match = /^web-([a-z0-9_-]+?)(?::([a-z0-9_-]+))?$/i.exec(m);
   if (match) return { site: match[1], session: match[2] };
-  return { site: process.env.WEB2MODEL_DEFAULT_SITE || "chatgpt" };
+  return { site: process.env.WEB2MODEL_DEFAULT_SITE || "zai" };
 }
 
 function estimateTokens(s: string): number {
@@ -443,5 +443,5 @@ const server = http.createServer((req, res) => {
 startBridge();
 server.listen(PORT, HOST, () => {
   console.log(`tablm gateway listening on http://${HOST}:${PORT}`);
-  console.log(`use with: ANTHROPIC_BASE_URL=http://${HOST}:${PORT} ANTHROPIC_AUTH_TOKEN=tablm claude --model web-chatgpt`);
+  console.log(`use with: ANTHROPIC_BASE_URL=http://${HOST}:${PORT} ANTHROPIC_AUTH_TOKEN=tablm claude --model web-zai`);
 });

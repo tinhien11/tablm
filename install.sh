@@ -58,7 +58,7 @@ cat > "$BIN_DIR/tablm" <<EOF
 #!/usr/bin/env bash
 export ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-http://127.0.0.1:8788}"
 export ANTHROPIC_AUTH_TOKEN="\${ANTHROPIC_AUTH_TOKEN:-tablm}"
-export ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-web-chatgpt}"
+export ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-web-zai}"
 exec claude "\$@"
 EOF
 chmod 755 "$BIN_DIR/tablm"
