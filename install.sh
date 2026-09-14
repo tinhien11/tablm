@@ -81,6 +81,13 @@ tail -n 50 -f "$HOME/.web2model/gateway.log"
 EOF
 chmod 755 "$BIN_DIR/tablm-logs"
 
+if [ -n "${WEB2MODEL_GATEWAY_HOST:-}" ]; then
+  sed -i.bak "s|^exec node|export WEB2MODEL_GATEWAY_HOST=\"$WEB2MODEL_GATEWAY_HOST\"\\nexec node|" "$BIN_DIR/tablm-gateway" && rm -f "$BIN_DIR/tablm-gateway.bak"
+fi
+if [ -n "${WEB2MODEL_GATEWAY_TOKEN:-}" ]; then
+  sed -i.bak "s|^exec node|export WEB2MODEL_GATEWAY_TOKEN=\"$WEB2MODEL_GATEWAY_TOKEN\"\\nexec node|" "$BIN_DIR/tablm-gateway" && rm -f "$BIN_DIR/tablm-gateway.bak"
+fi
+
 case "$(uname -s)" in
   Darwin)
     mkdir -p "$HOME/Library/LaunchAgents"
@@ -194,4 +201,12 @@ echo "     tablm-logs      tail the gateway log"
 echo "     npm test        MCP smoke test (in $DIR)"
 echo
 echo "   The gateway autostarts at login."
+if [ "${WEB2MODEL_GATEWAY_HOST:-}" = "0.0.0.0" ]; then
+  LAN_IP=$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -1)
+  [ -z "$LAN_IP" ] && LAN_IP=$(ifconfig 2>/dev/null | grep 'inet ' | grep -v 127.0.0.1 | awk '{print $2}' | head -1)
+  echo
+  echo "   LAN access (host 0.0.0.0):"
+  echo "     ANTHROPIC_BASE_URL=http://${LAN_IP:-<VM_IP>}:8788 ANTHROPIC_AUTH_TOKEN=\${WEB2MODEL_GATEWAY_TOKEN:-tablm} claude"
+  [ -n "${WEB2MODEL_GATEWAY_TOKEN:-}" ] || echo "     (tip: set WEB2MODEL_GATEWAY_TOKEN before install to protect the port)"
+fi
 echo "============================================================"

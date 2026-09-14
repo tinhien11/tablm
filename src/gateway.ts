@@ -316,6 +316,17 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
   }
 }
 
+const GATEWAY_TOKEN = process.env.WEB2MODEL_GATEWAY_TOKEN || "";
+
+function authorized(req: http.IncomingMessage): boolean {
+  if (!GATEWAY_TOKEN) return true;
+  const apiKey = req.headers["x-api-key"];
+  if (typeof apiKey === "string" && apiKey === GATEWAY_TOKEN) return true;
+  const auth = req.headers.authorization;
+  if (typeof auth === "string" && auth === `Bearer ${GATEWAY_TOKEN}`) return true;
+  return false;
+}
+
 const server = http.createServer((req, res) => {
   const chunks: Buffer[] = [];
   let body: any = {};
@@ -330,6 +341,11 @@ const server = http.createServer((req, res) => {
       return;
     }
     const path = (req.url ?? "").split("?")[0];
+    if (!authorized(req)) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid token (set WEB2MODEL_GATEWAY_TOKEN on the gateway and ANTHROPIC_AUTH_TOKEN on the client)" } }));
+      return;
+    }
     if (req.method === "POST" && (path === "/v1/messages" || path === "/v1/messages/count_tokens")) {
       if (path.endsWith("/count_tokens")) {
         res.writeHead(200, { "content-type": "application/json" });
