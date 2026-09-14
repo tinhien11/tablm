@@ -182,15 +182,18 @@ function parseToolCalls(text: string): { calls: ToolCall[]; cleanText: string } 
   }
   // Fallback: bare JSON objects with "name" + "input" (web chat strips backticks)
   if (!calls.length) {
-    const obj = extractJsonObject(text, 0);
-    if (obj) {
+    let searchFrom = 0;
+    while (searchFrom < text.length) {
+      const obj = extractJsonObject(text, searchFrom);
+      if (!obj) break;
       try {
         const parsed = JSON.parse(obj);
         if (parsed && typeof parsed.name === "string" && typeof parsed.input === "object") {
-          if (first < 0) first = text.indexOf(obj);
+          if (first < 0) first = text.indexOf(obj, searchFrom);
           calls.push({ name: parsed.name, input: parsed.input ?? {} });
         }
       } catch {}
+      searchFrom = text.indexOf(obj, searchFrom) + obj.length;
     }
   }
   if (!calls.length) {
