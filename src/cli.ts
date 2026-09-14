@@ -224,6 +224,136 @@ const tools: Tool[] = [
       }
     },
   },
+  {
+    name: "BrowserNavigate",
+    description: "Navigate the browser tab to a URL. Use for opening any web page (docs, dashboards, login pages, APIs). Returns the page title and URL after load.",
+    input_schema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
+    run: async (input) => {
+      try {
+        const page = await getScratchPage(input.url);
+        await new Promise((r) => setTimeout(r, 2000));
+        const info = await page.evalValue<string>(`JSON.stringify({ url: location.href, title: document.title })`);
+        return info;
+      } catch (e: any) {
+        return `[error] navigate failed: ${e.message}`;
+      }
+    },
+  },
+  {
+    name: "BrowserSnapshot",
+    description: "Get a text snapshot of the current page: visible text content, all interactive elements (links, buttons, inputs) with their selectors. Use to understand page structure before clicking or filling.",
+    input_schema: { type: "object", properties: { selector: { type: "string", description: "optional CSS selector to scope the snapshot to a specific element" } }, required: [] },
+    run: async (input) => {
+      try {
+        if (!scratchPage) return "[error] no page open - use BrowserNavigate first";
+        const sel = input.selector || "body";
+        const snapshot = await scratchPage.evalValue<string>(`(() => {
+          const root = document.querySelector('${sel}') || document.body;
+          const lines = [];
+          // Grab visible text
+          const text = root.innerText.slice(0, 5000);
+          lines.push("=== TEXT ===");
+          lines.push(text);
+          // Grab interactive elements
+          lines.push("\\n=== INTERACTIVE ELEMENTS ===");
+          const els = root.querySelectorAll('a, button, input, textarea, select, [role="button"], [onclick]');
+          let count = 0;
+          for (const el of els) {
+            if (count >= 100) { lines.push("... (truncated)"); break; }
+            const tag = el.tagName.toLowerCase();
+            const id = el.id ? '#' + el.id : '';
+            const cls = el.className && typeof el.className === 'string' ? '.' + el.className.split(' ').filter(Boolean).slice(0, 3).join('.') : '';
+            const type = el.getAttribute('type') ? '[type=' + el.getAttribute('type') + ']' : '';
+            const name = el.getAttribute('name') ? '[name=' + el.getAttribute('name') + ']' : '';
+            const text2 = (el.innerText || el.value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || '').trim().slice(0, 60);
+            const selector = tag + id + cls + type + name;
+            lines.push(count + ': ' + selector + ' -> "' + text2 + '"');
+            count++;
+          }
+          return lines.join('\\n');
+        })()`);
+        return snapshot || "(empty page)";
+      } catch (e: any) {
+        return `[error] snapshot failed: ${e.message}`;
+      }
+    },
+  },
+  {
+    name: "BrowserClick",
+    description: "Click an element on the page by CSS selector. Use after BrowserSnapshot to find the selector. Returns the result text or error.",
+    input_schema: { type: "object", properties: { selector: { type: "string", description: "CSS selector for the element to click (e.g. 'button#submit', 'a[href=\"/login\"]')" } }, required: ["selector"] },
+    run: async (input) => {
+      try {
+        if (!scratchPage) return "[error] no page open - use BrowserNavigate first";
+        const result = await scratchPage.evalValue<string>(`(() => {
+          const el = document.querySelector('${input.selector.replace(/'/g, "\\'")}');
+          if (!el) return '[error] element not found: ${input.selector.replace(/'/g, "\\'")}';
+          el.click();
+          return 'clicked: ${input.selector.replace(/'/g, "\\'")}';
+        })()`);
+        await new Promise((r) => setTimeout(r, 1000));
+        return result;
+      } catch (e: any) {
+        return `[error] click failed: ${e.message}`;
+      }
+    },
+  },
+  {
+    name: "BrowserFill",
+    description: "Type text into an input or textarea by CSS selector. Use for filling forms, search boxes, login fields. Returns confirmation.",
+    input_schema: { type: "object", properties: { selector: { type: "string", description: "CSS selector for the input element" }, value: { type: "string", description: "text to type into the field" } }, required: ["selector", "value"] },
+    run: async (input) => {
+      try {
+        if (!scratchPage) return "[error] no page open - use BrowserNavigate first";
+        const result = await scratchPage.evalValue<string>(`(() => {
+          const el = document.querySelector('${input.selector.replace(/'/g, "\\'")}');
+          if (!el) return '[error] element not found: ${input.selector.replace(/'/g, "\\'")}';
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+          const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+          const setter = el.tagName === 'TEXTAREA' ? nativeTextAreaValueSetter : nativeInputValueSetter;
+          if (setter) setter.call(el, ${JSON.stringify(input.value)});
+          else el.value = ${JSON.stringify(input.value)};
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          return 'filled: ${input.selector.replace(/'/g, "\\'")} with ${input.value.length} chars';
+        })()`);
+        return result;
+      } catch (e: any) {
+        return `[error] fill failed: ${e.message}`;
+      }
+    },
+  },
+  {
+    name: "BrowserScreenshot",
+    description: "Take a screenshot of the current page and save it to a file. Returns the file path. Use to see what the page looks like (login walls, captchas, visual layout).",
+    input_schema: { type: "object", properties: { path: { type: "string", description: "file path to save the screenshot (default: /tmp/tablm-screenshot.png)" } }, required: [] },
+    run: async (input) => {
+      try {
+        if (!scratchPage) return "[error] no page open - use BrowserNavigate first";
+        const data = await scratchPage.screenshot();
+        const filePath = input.path || "/tmp/tablm-screenshot.png";
+        const { writeFileSync } = await import("node:fs");
+        writeFileSync(filePath, Buffer.from(data, "base64"));
+        return `screenshot saved to ${filePath} (${Math.round(data.length * 3/4 / 1024)}KB)`;
+      } catch (e: any) {
+        return `[error] screenshot failed: ${e.message}`;
+      }
+    },
+  },
+  {
+    name: "BrowserEval",
+    description: "Evaluate JavaScript on the current page and return the result. Use for advanced interactions: reading computed styles, extracting data from SPAs, calling page APIs, waiting for dynamic content.",
+    input_schema: { type: "object", properties: { code: { type: "string", description: "JavaScript expression to evaluate (must return a value)" } }, required: ["code"] },
+    run: async (input) => {
+      try {
+        if (!scratchPage) return "[error] no page open - use BrowserNavigate first";
+        const result = await scratchPage.evalValue<string>(input.code);
+        return typeof result === "string" ? result : JSON.stringify(result);
+      } catch (e: any) {
+        return `[error] eval failed: ${e.message}`;
+      }
+    },
+  },
 ];
 
 const toolMap = new Map(tools.map((t) => [t.name, t]));
@@ -386,7 +516,7 @@ async function main() {
     process.exit(1);
   }
 
-  const systemPrompt = `You are an autonomous coding agent. You have tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch.
+  const systemPrompt = `You are an autonomous coding agent. You have tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, BrowserNavigate, BrowserSnapshot, BrowserClick, BrowserFill, BrowserScreenshot, BrowserEval.
 
 CRITICAL RULES:
 1. DO NOT describe what you will do. DO NOT explain your plan. Just call the tool directly.
@@ -395,7 +525,8 @@ CRITICAL RULES:
 4. Only output text when you have the FINAL answer (after all tools executed).
 5. Work in ${process.cwd()}.
 6. When the task is complete, output only "DONE" + brief summary.
-7. Use WebSearch for looking up docs, APIs, error messages, or current info. Use WebFetch to read a specific URL.`;
+7. Use WebSearch for looking up info. Use WebFetch to read a URL. Use Browser* tools to interact with web pages (click, fill forms, navigate, screenshot, eval JS).
+8. Browser workflow: BrowserNavigate to open page -> BrowserSnapshot to see structure -> BrowserClick/BrowserFill to interact -> BrowserScreenshot to verify.`;
 
   const messages: any[] = [{ role: "user", content: initialPrompt }];
 
