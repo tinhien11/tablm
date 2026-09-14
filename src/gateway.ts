@@ -180,6 +180,19 @@ function parseToolCalls(text: string): { calls: ToolCall[]; cleanText: string } 
       } catch {}
     }
   }
+  // Fallback: bare JSON objects with "name" + "input" (web chat strips backticks)
+  if (!calls.length) {
+    const obj = extractJsonObject(text, 0);
+    if (obj) {
+      try {
+        const parsed = JSON.parse(obj);
+        if (parsed && typeof parsed.name === "string" && typeof parsed.input === "object") {
+          if (first < 0) first = text.indexOf(obj);
+          calls.push({ name: parsed.name, input: parsed.input ?? {} });
+        }
+      } catch {}
+    }
+  }
   if (!calls.length) {
     const marker = text.search(/```tooluse|```json|(^|\n)\s*tooluse\s*\n/);
     if (marker >= 0) {
@@ -332,6 +345,9 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
     }
     clearInterval(ping);
     const { calls, cleanText } = parseToolCalls(result.text || "");
+    if (body.tools?.length && !calls.length && result.text) {
+      console.log(`[gateway] ${site} parse debug: text=${JSON.stringify(result.text.slice(0, 300))} calls=${calls.length}`);
+    }
     let index = 0;
     if (result.thinking) {
       sse(res, "content_block_start", { type: "content_block_start", index, content_block: { type: "thinking", thinking: "" } });
