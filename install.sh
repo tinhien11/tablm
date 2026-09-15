@@ -51,7 +51,7 @@ mkdir -p "$BIN_DIR" "$APP_DIR" "$HOME/.config/autostart"
 rm -f "$BIN_DIR/tablm-chrome" "$BIN_DIR/tablm-claude" "$BIN_DIR/tablm-gateway" "$APP_DIR/tablm.desktop" "$HOME/.config/autostart/tablm-chrome.desktop"
 cat > "$BIN_DIR/tablm-gateway" <<EOF
 #!/usr/bin/env bash
-exec node "$DIR/dist/gateway.js" "$@" >> "$HOME/.tablm/gateway.log" 2>&1
+exec node "$DIR/dist/gateway.js" "\$@" >> "$HOME/.tablm/gateway.log" 2>&1
 EOF
 chmod 755 "$BIN_DIR/tablm-gateway"
 cat > "$BIN_DIR/tablm" <<EOF
@@ -82,7 +82,7 @@ EOF
 chmod 755 "$BIN_DIR/tablm-logs"
 cat > "$BIN_DIR/tablm-cli" <<EOF
 #!/usr/bin/env bash
-exec node "$DIR/dist/cli.js" "$@"
+exec node "$DIR/dist/cli.js" "\$@"
 EOF
 chmod 755 "$BIN_DIR/tablm-cli"
 
