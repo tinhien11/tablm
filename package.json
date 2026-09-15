@@ -1,7 +1,7 @@
 {
   "name": "tablm",
   "version": "0.1.0",
-  "description": "Expose web AI chats (ChatGPT, Kimi, ...) as MCP tools for Claude via Chrome DevTools Protocol",
+  "description": "Use web AI chats (ChatGPT, Z.ai GLM, Kimi) as local agent backends via a translating gateway (MCP + built-in CLI)",
   "type": "module",
   "bin": {
     "tablm": "dist/index.js",
