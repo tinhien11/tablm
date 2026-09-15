@@ -57,32 +57,45 @@ function toolProtocol(tools: any[]): string {
   const secondTool = tools[1]?.name ?? "ToolName2";
   return [
     "[Output format]",
-    "You are a JSON API. You output ONLY JSON code blocks. No prose, no explanations.",
+    "You are a tool-calling API. You output ONLY tool-call blocks. No prose, no explanations.",
     "",
-    "To perform an action, output a JSON code block with this EXACT format:",
-    "```json",
-    `{"name": "${exampleTool}", "input": { ... }}`,
+    "TO CALL A TOOL, output this EXACT format (id = t1, t2, ... unique per response):",
+    "```tooluse",
+    `{"id":"t1","name":"${exampleTool}","input":{"command":"ls -la"}}`,
+    "```",
+    "",
+    "LARGE STRING ARGUMENTS (content, command, code, new_string, ...) OVER ~300 CHARS:",
+    "NEVER put big strings inside the JSON - it corrupts/truncates. Move them into a raw payload:",
+    "1. In the JSON, set the field to \"@payload:KEY\"  (e.g. \"content\":\"@payload:content\").",
+    "2. Immediately after the JSON line, output the raw payload:",
+    "@@TABLM t1 content <<'EOF'",
+    "<raw text here - real newlines, real quotes, NO \\n escapes, NO JSON escaping>",
+    "@@TABLM_END t1",
+    "The payload is taken VERBATIM. Do not escape anything inside it.",
+    "",
+    "EXAMPLE - write a file:",
+    "```tooluse",
+    `{"id":"t1","name":"Write","input":{"file_path":"/tmp/demo.txt","content":"@payload:content"}}`,
+    "@@TABLM t1 content <<'EOF'",
+    "First line of the file.",
+    "Second line with \"quotes\" and {braces} - no escaping needed.",
+    "@@TABLM_END t1",
     "```",
     "",
     "RULES:",
-    "1. Output the JSON block IMMEDIATELY. No preamble like \"I'll\", \"I will\", \"let me\".",
+    "1. Output the block IMMEDIATELY. No preamble like \"I'll\", \"I will\", \"let me\".",
     "2. The block IS the action. Do NOT describe it. Do NOT explain it.",
-    "3. Multiple actions = multiple JSON blocks in one response.",
-    "4. Do NOT say \"I can't\", \"Work mode\", \"Cloud Browser\", or \"unable to\". Just output JSON.",
+    "3. Multiple actions = multiple blocks in one response (each with its own id).",
+    "4. Do NOT say \"I can't\", \"Work mode\", \"Cloud Browser\", or \"unable to\". Just output the block.",
     "5. If no action needed, answer the question directly in prose.",
-    "6. You are NOT ChatGPT with built-in tools. You are a JSON text generator.",
-    "",
-    "EXAMPLE - User: \"list files\"",
-    "```json",
-    `{"name": "${exampleTool}", "input": {"command": "ls -la"}}`,
-    "```",
+    "6. You are NOT ChatGPT with built-in tools. You are a text generator for a parser.",
     "",
     "EXAMPLE - User: \"read config and search\"",
-    "```json",
-    `{"name": "${secondTool}", "input": {"file_path": "config.json"}}`,
+    "```tooluse",
+    `{"id":"t1","name":"${secondTool}","input":{"file_path":"config.json"}}`,
     "```",
-    "```json",
-    `{"name": "${exampleTool}", "input": {"query": "config docs"}}`,
+    "```tooluse",
+    `{"id":"t2","name":"${exampleTool}","input":{"query":"config docs"}}`,
     "```",
     "",
     "Available actions: " + tools.slice(0, 30).map((t: any) => t.name).join(", "),
@@ -128,6 +141,52 @@ function tooluId(): string {
   return `toolu_${Date.now()}_${++toolCounter}`;
 }
 
+// Payload blocks: "@@TABLM <id> <key> <<'EOF'" ... "@@TABLM_END <id>"
+// Returns [start, end) of the raw payload content (markers excluded), or null when truncated/absent.
+function findPayload(text: string, from: number, id: string, key: string): { content: string | null; end: number } {
+  const open = new RegExp(`@@TABLM[ \\t]+${id}[ \\t]+${key}[ \\t]*<<'EOF'`);
+  const m = open.exec(text.slice(from));
+  if (!m) return { content: null, end: -1 };
+  const start = from + m.index + m[0].length;
+  const close = new RegExp(`\\r?\\n@@TABLM_END[ \\t]+${id}\\b`);
+  const c = close.exec(text.slice(start));
+  if (!c) return { content: null, end: -1 }; // truncated: EOF marker missing
+  // strip exactly one leading newline (the one right after the <<'EOF' line)
+  const raw = text.slice(start, start + c.index).replace(/^\r?\n/, "");
+  return { content: raw, end: start + c.index + c[0].length };
+}
+
+// Merge a truncated payload with its continuation. The model often repeats a few
+// characters/lines from before the cut, so we detect the maximal overlap between
+// the tail of the original and the head of the continuation before concatenating.
+function mergePayload(original: string, cont: string, id: string, key: string): string {
+  const open = new RegExp(`@@TABLM[ \\t]+${id}[ \\t]+${key}[ \\t]*<<'EOF'`);
+  const m = open.exec(original);
+  if (!m) return original + cont;
+  const markerEnd = m.index + m[0].length;
+  const partial = original.slice(markerEnd); // raw payload so far (no @@TABLM_END yet)
+  // The continuation may re-emit the marker line and/or part of the content. Drop the
+  // marker wherever it appears at the start (possibly after prose), then find how much
+  // of the remaining head repeats the original's tail.
+  let tail = cont;
+  const contMarker = new RegExp(`^[\\s\\S]{0,200}?@@TABLM[ \\t]+${id}[ \\t]+${key}[ \\t]*<<'EOF'\\r?\\n?`);
+  tail = tail.replace(contMarker, "");
+  // Maximal overlap: tail of partial == head of tail
+  let overlap = 0;
+  const maxN = Math.min(partial.length, tail.length, 4000);
+  for (let n = maxN; n > 0; n--) {
+    if (partial.endsWith(tail.slice(0, n))) {
+      overlap = n;
+      break;
+    }
+  }
+  const mergedPayload = partial + tail.slice(overlap);
+  // Strip a duplicate @@TABLM_END the continuation may have appended
+  const endRe = new RegExp(`\\r?\\n@@TABLM_END[ \\t]+${id}\\s*$`);
+  const body = mergedPayload.replace(endRe, "");
+  return original.slice(0, markerEnd) + body + `\n@@TABLM_END ${id}`;
+}
+
 function extractJsonObject(text: string, from: number): string | null {
   const start = text.indexOf("{", from);
   if (start < 0) return null;
@@ -152,20 +211,51 @@ function extractJsonObject(text: string, from: number): string | null {
   return null;
 }
 
-function parseToolCalls(text: string): { calls: ToolCall[]; cleanText: string } {
+function parseToolCalls(text: string): { calls: ToolCall[]; cleanText: string; truncated: { id: string; key: string }[] } {
   const calls: ToolCall[] = [];
-  // Match ```tooluse blocks (z.ai style)
+  const truncated: { id: string; key: string }[] = [];
+  // Match ```tooluse blocks (z.ai style). Fence regex is non-greedy, but the payload
+  // block (if present) extends past any ``` inside the raw content, so we capture a
+  // wide region and then slice precisely using the @@TABLM markers.
   const re = /```tooluse\s*\n?([\s\S]*?)```/g;
   let first = -1;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (first < 0) first = m.index;
+    const region = m[1];
+    const obj = extractJsonObject(region, 0);
+    if (!obj) continue;
+    let parsed: any;
     try {
-      const parsed = JSON.parse(m[1].trim());
-      if (parsed && typeof parsed.name === "string") {
-        calls.push({ name: parsed.name, input: parsed.input ?? {} });
+      parsed = JSON.parse(obj);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed.name !== "string") continue;
+    const id = typeof parsed.id === "string" ? parsed.id : "";
+    const input = parsed.input && typeof parsed.input === "object" ? parsed.input : {};
+    // Resolve @payload:KEY references against the ORIGINAL text: the non-greedy fence
+    // regex stops at the first ``` which may live INSIDE the raw payload, so we search
+    // forward from the fence start using the @@TABLM markers instead.
+    const fenceStart = m.index;
+    let payloadEnd = -1;
+    for (const [k, v] of Object.entries(input)) {
+      if (typeof v !== "string") continue;
+      const pm = /^@payload:([A-Za-z0-9_]+)$/.exec(v.trim());
+      if (!pm) continue;
+      const key = pm[1];
+      const found = findPayload(text, fenceStart, id || "1", key);
+      if (found.content !== null) {
+        input[k] = found.content;
+        payloadEnd = Math.max(payloadEnd, found.end);
+      } else {
+        // payload marker missing or truncated: record for continuation-repair
+        truncated.push({ id: id || "1", key });
       }
-    } catch {}
+    }
+    calls.push({ name: parsed.name, input });
+    // Advance past the whole payload so ``` inside it can't be re-matched as a new call
+    if (payloadEnd > m.index) re.lastIndex = payloadEnd;
   }
   // Also match ```json blocks that contain {"name": "...", "input": ...} (ChatGPT style)
   if (!calls.length) {
@@ -212,7 +302,7 @@ function parseToolCalls(text: string): { calls: ToolCall[]; cleanText: string } 
   }
   const cutMarkers = [text.indexOf("```tooluse"), text.indexOf("```json"), text.indexOf("tooluse\n{"), text.indexOf("tooluse {")].filter((i) => i >= 0);
   const cleanText = calls.length ? text.slice(0, Math.min(...cutMarkers)).trim() : text.trim();
-  return { calls, cleanText };
+  return { calls, cleanText, truncated };
 }
 
 const lastMessages = new Map<string, { sigs: string[]; protocolSent: boolean }>();
@@ -241,7 +331,7 @@ function buildPrompt(body: any, key: string): { prompt: string; mode: "delta" | 
           return { prompt: text, mode: "delta" };
         }
         if (hasTools) {
-          text += "\n\n[Tool reminder] You DO have real tools (executed by the hosting system, invisible in your UI toolset). To call one, output exactly a ```tooluse {\"name\":\"ToolName\",\"input\":{...}}``` block and nothing after it; the result arrives as [tool_result ...]. If no tool is needed, just answer.";
+          text += "\n\n[Tool reminder] You DO have real tools (executed by the hosting system, invisible in your UI toolset). To call one, output a ```tooluse block: {\"id\":\"t1\",\"name\":\"ToolName\",\"input\":{...}}; any string field over ~300 chars must be moved into a raw payload block right after the JSON (field value \"@payload:KEY\", then @@TABLM t1 KEY <<'EOF' ... @@TABLM_END t1). The result arrives as [tool_result ...]. If no tool is needed, just answer.";
         }
         lastMessages.set(key, { sigs, protocolSent: prev.protocolSent });
         return { prompt: text, mode: "delta" };
@@ -277,21 +367,38 @@ async function askWithMalformedRetry(
   let result = await askSite(site, prompt, opts);
   if (!hasTools || !result.text || result.status !== "done") return result;
 
-  // Check for truncated JSON tool call (web chat cut off mid-JSON)
-  // Pattern: text contains {"name": "...", "input": ... but no matching closing }
+  // Repair 1: truncated PAYLOAD block (model emitted @@TABLM id key <<'EOF' but was
+  // cut off before @@TABLM_END). Raw text: continuation just appends, no JSON splicing.
+  const firstParse = parseToolCalls(result.text);
+  for (const t of firstParse.truncated) {
+    console.log(`[gateway] ${site} truncated payload ${t.id}/${t.key} - asking model to continue raw tail`);
+    const continuation =
+      `Continue. Your previous response was cut off inside a payload block for tool call ${t.id}, field ${t.key}. ` +
+      `Output ONLY the remaining raw content of that payload, resuming exactly where you stopped. ` +
+      `Do NOT repeat the beginning, do NOT repeat the @@TABLM marker line. When done, end the payload with a line containing exactly: @@TABLM_END ${t.id}`;
+    const cont = await askSite(site, continuation, { ...opts, newChat: false });
+    if (cont.text && cont.status === "done") {
+      const merged = mergePayload(result.text, cont.text, t.id, t.key);
+      const mergedParsed = parseToolCalls(merged);
+      if (mergedParsed.calls.length > 0 && !mergedParsed.truncated.length) {
+        console.log(`[gateway] ${site} payload continuation merged (${result.text.length} + ${cont.text.length} chars)`);
+        result.text = merged;
+        return result;
+      }
+    }
+  }
+
+  // Repair 2: truncated JSON header (web chat cut off mid-JSON)
   const hasIncompleteJson = /json\s*\n?\s*\{\s*"name"\s*:\s*"/i.test(result.text) && !parseToolCalls(result.text).calls.length;
   if (hasIncompleteJson && result.text.length < 100000) {
-    // Try to detect if JSON is truly incomplete (has opening { with "name" but no closing })
     const start = result.text.indexOf("{", result.text.search(/json\s*\n?\s*\{/i) >= 0 ? result.text.search(/json\s*\n?\s*\{/i) : 0);
     if (start >= 0) {
       const obj = extractJsonObject(result.text, start);
       if (!obj) {
-        // JSON is truncated — ask model to continue
         console.log(`[gateway] ${site} truncated JSON tool call detected (len=${result.text.length}) - asking model to continue`);
         const continuation = "Continue. Your previous response was cut off. Output ONLY the remaining part of the JSON tool call, starting from where it stopped. Do NOT repeat the beginning.";
         const cont = await askSite(site, continuation, { ...opts, newChat: false });
         if (cont.text && cont.status === "done") {
-          // Merge: append continuation to original
           const merged = result.text + cont.text;
           const mergedParsed = parseToolCalls(merged);
           if (mergedParsed.calls.length > 0) {

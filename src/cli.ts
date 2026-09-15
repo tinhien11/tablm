@@ -129,7 +129,7 @@ const tools: Tool[] = [
   },
   {
     name: "Write",
-    description: "Write content to a file. DEPRECATED - use Bash with heredoc instead: cat > file <<'EOF' ... EOF. Only use for very small files (<200 chars).",
+    description: "Write content to a file. For content over ~300 chars, use the payload form: set content to \"@payload:content\" and output the raw text between @@TABLM t1 content <<'EOF' and @@TABLM_END t1 after the JSON (no escaping needed).",
     input_schema: { type: "object", properties: { file_path: { type: "string" }, content: { type: "string" } }, required: ["file_path", "content"] },
     run: async (input) => {
       try {
@@ -692,15 +692,7 @@ async function main() {
     process.stderr.write(`[resume] session ${id} (${session.messages.length} messages, cwd: ${session.cwd})\n`);
   } else {
     initialPrompt = args.join(" ");
-    if (!initialPrompt) {
-      console.error("usage:");
-      console.error("  tablm-cli <prompt>              start new session");
-      console.error("  tablm-cli -m <model> <prompt>    start with specific model");
-      console.error("  tablm-cli --list                list saved sessions");
-      console.error("  tablm-cli --models              list available models");
-      console.error("  tablm-cli --resume <id> [msg]   resume session");
-      process.exit(1);
-    }
+    // No prompt given: start interactive mode - the REPL below collects the first task.
     const now = new Date().toISOString();
     session = {
       id: genSessionId(),
@@ -724,7 +716,7 @@ CRITICAL RULES:
 6. When the task is complete, output only "DONE" + brief summary.
 7. Use WebSearch for looking up info. Use WebFetch to read a URL. Use Browser* tools to interact with web pages (click, fill forms, navigate, screenshot, eval JS).
 8. Browser workflow: BrowserNavigate to open page -> BrowserSnapshot to see structure -> BrowserClick/BrowserFill to interact -> BrowserScreenshot to verify.
-9. NEVER use the Write tool - it gets truncated. ALWAYS use Bash with heredoc to write files: {"name":"Bash","input":{"command":"cat > /tmp/file.html <<'EOF'\\n<content>\\nEOF"}}`;
+9. To write files or pass any large string (>300 chars), use the payload form: set the field to "@payload:KEY" in the JSON, then output the raw content between "@@TABLM t1 KEY <<'EOF'" and "@@TABLM_END t1" lines right after the JSON. Never JSON-escape newlines or quotes - the payload is raw verbatim text.`;
 
   const messages = session.messages;
   if (messages.length === 0) {
