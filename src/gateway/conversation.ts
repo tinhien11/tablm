@@ -127,7 +127,9 @@ export function buildPrompt(body: any, key: string): BuiltPrompt {
     if (lcp >= prev.sigs.length - 1 && sigs.length > lcp) {
       const delta = msgs.slice(lcp);
       let text = formatMessages(delta);
-      if (text.trim()) {
+      // an oversized delta would bypass the full-mode prompt cap entirely -
+      // fall through to the full rebuild, which truncates the middle instead
+      if (text.trim() && text.length <= MAX_PROMPT_CHARS) {
         if (hasTools && !prev.protocolSent) {
           const out = `[Tool use protocol]\n${toolProtocol(body.tools)}\n\n${text}`;
           conv.set(key, { sigs, protocolSent: true });

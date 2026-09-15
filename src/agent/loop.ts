@@ -19,6 +19,13 @@ const GATEWAY = process.env.TABLM_GATEWAY_URL || "http://127.0.0.1:8788";
 const AUTH_TOKEN = process.env.TABLM_AUTH_TOKEN || "tablm";
 const MAX_TURNS = Number(process.env.TABLM_MAX_TURNS || 50);
 const MAX_RESULT_CHARS = Number(process.env.TABLM_MAX_RESULT_CHARS || 8000);
+/**
+ * Hard enforcement of the parallel-call cap (contract v4 asks for <=3; this is
+ * the bound that actually holds). Growth per turn is capped at
+ * MAX_CALLS_PER_TURN x MAX_RESULT_CHARS, which keeps a single round inside the
+ * compaction keep-budget even when the model ignores the prompt rule entirely.
+ */
+const MAX_CALLS_PER_TURN = Number(process.env.TABLM_MAX_CALLS_PER_TURN || 6);
 
 /** PLANNING language: the model is narrating instead of acting. */
 const PLANNING = [
@@ -213,7 +220,12 @@ export async function runTurn(
 
     messages.push({ role: "assistant", content });
 
-    for (const tu of toolUses) {
+    // enforce the parallel-call cap: execute the first N, give the rest a
+    // protocol-valid tool_result telling the model to re-emit them next turn
+    const executable = toolUses.slice(0, MAX_CALLS_PER_TURN);
+    const skipped = toolUses.slice(MAX_CALLS_PER_TURN);
+
+    for (const tu of executable) {
       const tool = toolMap.get(tu.name);
       const at = new Date().toISOString();
       appendEvent(session.id, { type: "tool_use", id: tu.id, name: tu.name, input: tu.input, at });
@@ -259,6 +271,18 @@ export async function runTurn(
         content: [{ type: "tool_result", tool_use_id: tu.id, content: result }],
       });
       appendEvent(session.id, { type: "tool_result", toolUseId: tu.id, content: result, at });
+    }
+
+    for (const tu of skipped) {
+      const result = `[skipped] per-turn limit is ${MAX_CALLS_PER_TURN} parallel tool calls; this call was not executed. Re-emit it in your next response.`;
+      messages.push({
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: tu.id, content: result }],
+      });
+      appendEvent(session.id, { type: "tool_result", toolUseId: tu.id, content: result, at: new Date().toISOString() });
+    }
+    if (skipped.length) {
+      process.stderr.write(`[cap] executed ${executable.length}, skipped ${skipped.length} parallel calls\n`);
     }
   }
   console.error(`reached max turns (${MAX_TURNS})`);
