@@ -18,6 +18,7 @@ import { parseToolCalls } from "../protocol/parse.js";
 const GATEWAY = process.env.TABLM_GATEWAY_URL || "http://127.0.0.1:8788";
 const AUTH_TOKEN = process.env.TABLM_AUTH_TOKEN || "tablm";
 const MAX_TURNS = Number(process.env.TABLM_MAX_TURNS || 50);
+const MAX_RESULT_CHARS = Number(process.env.TABLM_MAX_RESULT_CHARS || 8000);
 
 /** PLANNING language: the model is narrating instead of acting. */
 const PLANNING = [
@@ -244,6 +245,13 @@ export async function runTurn(
         }
       }
       actedThisTask = true;
+      // Bound each result before it enters history: a single 17K result (or ten
+      // in one round) blows past every downstream cap and gets the task cut off.
+      if (result.length > MAX_RESULT_CHARS) {
+        result =
+          result.slice(0, MAX_RESULT_CHARS) +
+          `\n[...truncated ${result.length - MAX_RESULT_CHARS} chars - re-read a narrower range if needed]`;
+      }
       process.stderr.write(`[result] ${result.slice(0, 300)}\n`);
       opts.onToolResult?.(tu.name, result.slice(0, 300));
       messages.push({

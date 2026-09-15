@@ -77,7 +77,15 @@ export function buildFullPrompt(body: any): string {
   parts.push("Assistant:\n");
   let prompt = parts.join("\n\n");
   if (prompt.length > MAX_PROMPT_CHARS) {
-    prompt = "[...earlier context truncated...]\n\n" + prompt.slice(-MAX_PROMPT_CHARS);
+    // Keep the HEAD (system + original task) and the TAIL (recent turns);
+    // truncate the middle. Tail-only truncation cut off the task itself and
+    // the web model replied "the original task isn't visible - nothing to act on".
+    const headKeep = 12_000;
+    const tailKeep = MAX_PROMPT_CHARS - headKeep - 200;
+    prompt =
+      prompt.slice(0, headKeep) +
+      "\n[...middle of the pasted history truncated - the task and recent turns follow...]\n" +
+      prompt.slice(-tailKeep);
   }
   console.log(
     `[gateway] full prompt breakdown: system=${sysLen} msgs=${msgsLen} toolProto=${toolProtoLen} tools=${body.tools?.length ?? 0} total=${prompt.length}`

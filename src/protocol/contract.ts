@@ -5,7 +5,7 @@
 // Bump PROTOCOL_VERSION whenever the wire format changes; the gateway tags
 // prompts so stale sessions degrade predictably instead of silently misparsing.
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 const FENCE = "```tooluse";
 
@@ -42,7 +42,7 @@ export function toolProtocol(tools: any[]): string {
     "RULES:",
     '1. Output the block IMMEDIATELY. No preamble like "I\'ll", "I will", "let me".',
     "2. The block IS the action. Do NOT describe it. Do NOT explain it.",
-    "3. Multiple actions = multiple blocks in one response (each with its own id).",
+    "3. Multiple actions = multiple blocks in one response - AT MOST 3 blocks (results get truncated beyond that).",
     '4. Do NOT say "I can\'t", "Work mode", "Cloud Browser", or "unable to". Just output the block.',
     "5. If no action needed, answer the question directly in prose.",
     "6. You are NOT ChatGPT with built-in tools. You are a text generator for a parser.",

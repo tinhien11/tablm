@@ -44,8 +44,16 @@ export function groupRounds(events: LogEvent[]): Round[] {
       continue;
     }
     if (ev.type === "assistant_text") {
-      if (!current) current = { assistantText: ev.text, toolUses: [], toolResults: [] };
-      else current.assistantText = (current.assistantText ?? "") + ev.text;
+      // an assistant utterance AFTER tool activity starts a new round; only
+      // consecutive text deltas merge into the same round
+      if (current && (current.toolUses.length || current.toolResults.length)) {
+        rounds.push(current);
+        current = { assistantText: ev.text, toolUses: [], toolResults: [] };
+      } else if (!current) {
+        current = { assistantText: ev.text, toolUses: [], toolResults: [] };
+      } else {
+        current.assistantText = (current.assistantText ?? "") + ev.text;
+      }
       continue;
     }
     if (ev.type === "tool_use") {
@@ -72,12 +80,31 @@ export function groupRounds(events: LogEvent[]): Round[] {
 
 const COMPACT_THRESHOLD_CHARS = 50_000;
 const COMPACT_KEEP_ROUNDS = 6;
+/** Post-compaction budget for the kept (recent) rounds. */
+const KEEP_BUDGET_CHARS = 30_000;
+/** Per-result cap inside kept rounds - bounds a single monster round. */
+const KEPT_RESULT_CHARS = 4_000;
 
 function roundChars(r: Round): number {
   let n = (r.assistantText ?? "").length;
   for (const u of r.toolUses) n += JSON.stringify(u.input ?? {}).length;
   for (const r2 of r.toolResults) n += r2.content.length;
   return n;
+}
+
+/** Shrink oversized results inside kept rounds (oldest results first). */
+function clampRound(r: Round): Round {
+  const toolResults = r.toolResults.map((res) =>
+    res.content.length > KEPT_RESULT_CHARS
+      ? {
+          ...res,
+          content:
+            res.content.slice(0, KEPT_RESULT_CHARS) +
+            `[...clamped ${res.content.length - KEPT_RESULT_CHARS} chars]`,
+        }
+      : res
+  );
+  return { ...r, toolResults };
 }
 
 export function totalChars(rounds: Round[]): number {
@@ -99,11 +126,21 @@ export function planCompaction(rounds: Round[]): {
     return { compact: false, summary: "", keep: rounds };
   }
   const keepCount = Math.min(COMPACT_KEEP_ROUNDS, rounds.length);
-  const toSummarize = rounds.slice(0, rounds.length - keepCount);
-  const keep = rounds.slice(rounds.length - keepCount);
+  let keep = rounds.slice(rounds.length - keepCount);
 
+  // The recent rounds alone can exceed the whole budget (one round of 10
+  // parallel tool calls produced ~60K of results). Clamp oversized results
+  // inside kept rounds, then drop oldest kept rounds into the summary until
+  // the kept tail fits the budget - the kept tail is guaranteed bounded.
+  keep = keep.map(clampRound);
+  while (keep.length > 1 && totalChars(keep) > KEEP_BUDGET_CHARS) {
+    keep = keep.slice(1);
+  }
+
+  // everything not kept - originally-old rounds AND rounds dropped from the
+  // kept tail - goes into one flat summary (never nested, never re-summarized)
   const parts: string[] = [];
-  for (const r of toSummarize) {
+  for (const r of rounds.slice(0, rounds.length - keep.length)) {
     if (r.assistantText) parts.push(`Assistant: ${r.assistantText.slice(0, 200)}`);
     for (const u of r.toolUses) {
       parts.push(`Assistant called ${u.name}(${JSON.stringify(u.input ?? {}).slice(0, 100)})`);
