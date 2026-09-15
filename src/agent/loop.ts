@@ -1,0 +1,258 @@
+// The agent turn loop.
+//
+// STOP SEMANTICS (the bug being fixed): the old loop treated "no tool calls"
+// as "task complete", so planning prose ("I have most of the picture now. Let
+// me read the remaining core files") ended the task. Now a tool-free turn ends
+// the task only when the model has ALREADY acted, or when it looks like a
+// genuine direct answer. Otherwise we nudge once and then accept.
+//
+// FAIL-CLOSED: blocked calls (unresolved payloads) are never executed. They
+// are reported to the model as a tool_result so it can re-emit them correctly.
+
+import { appendEvent, type Session } from "./log.js";
+import { groupRounds, planCompaction, totalChars } from "./rounds.js";
+import { toolMap } from "./tools/registry.js";
+import type { ToolContext } from "./tools/index.js";
+import { parseToolCalls } from "../protocol/parse.js";
+
+const GATEWAY = process.env.TABLM_GATEWAY_URL || "http://127.0.0.1:8788";
+const AUTH_TOKEN = process.env.TABLM_AUTH_TOKEN || "tablm";
+const MAX_TURNS = Number(process.env.TABLM_MAX_TURNS || 50);
+
+/** PLANNING language: the model is narrating instead of acting. */
+const PLANNING = [
+  /\blet me (read|check|look|examine|see|understand|gather|start|begin)/i,
+  /\bi have (most of|a good|the) (picture|context|understanding)/i,
+  /\bbefore (i|making|we) (make|change|edit|write|commit|doing)/i,
+  /\bi('ll| will) (read|check|look|examine|see|gather|start|begin)/i,
+];
+
+interface StreamResult {
+  content: any[];
+  stop_reason: string;
+}
+
+async function callGateway(messages: any[], useTools: boolean, model: string): Promise<StreamResult> {
+  const body: any = { model, max_tokens: 8192, messages, stream: true };
+  if (useTools) {
+    const { TOOLS } = await import("./tools/registry.js");
+    body.tools = TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
+  }
+  const res = await fetch(`${GATEWAY}/v1/messages`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": AUTH_TOKEN,
+      authorization: `Bearer ${AUTH_TOKEN}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    const text = await res.text();
+    throw new Error(`gateway ${res.status}: ${text}`);
+  }
+
+  const content: any[] = [];
+  let stopReason = "end_turn";
+  const blocks: Record<number, any> = {};
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      const eventLine = chunk.split("\n").find((l) => l.startsWith("event:"));
+      const dataLine = chunk.split("\n").find((l) => l.startsWith("data:"));
+      if (!eventLine || !dataLine) continue;
+      const event = eventLine.slice(7).trim();
+      let data: any;
+      try {
+        data = JSON.parse(dataLine.slice(5));
+      } catch {
+        continue;
+      }
+
+      if (event === "content_block_start") {
+        const cb = data.content_block;
+        blocks[data.index] = { type: cb.type, text: "", name: cb.name, id: cb.id, input: "" };
+        if (cb.type === "text") process.stderr.write("[model] ");
+      } else if (event === "content_block_delta") {
+        const b = blocks[data.index];
+        if (!b) continue;
+        const d = data.delta;
+        if (d.type === "text_delta") {
+          b.text += d.text;
+          process.stderr.write(d.text);
+        } else if (d.type === "input_json_delta") {
+          b.input += d.partial_json;
+        }
+      } else if (event === "content_block_stop") {
+        const b = blocks[data.index];
+        if (!b) continue;
+        if (b.type === "text") {
+          content.push({ type: "text", text: b.text });
+          process.stderr.write("\n");
+        } else if (b.type === "tool_use") {
+          let input: any = {};
+          try {
+            input = JSON.parse(b.input || "{}");
+          } catch {}
+          content.push({ type: "tool_use", id: b.id, name: b.name, input });
+          process.stderr.write(`\n[tool_use ${b.name}]\n`);
+        }
+      } else if (event === "message_delta") {
+        if (data.delta?.stop_reason) stopReason = data.delta.stop_reason;
+      }
+    }
+  }
+
+  return { content, stop_reason: stopReason };
+}
+
+function isPlanning(text: string): boolean {
+  return PLANNING.some((re) => re.test(text));
+}
+
+export interface LoopOpts {
+  onToolResult?: (name: string, preview: string) => void;
+}
+
+/**
+ * Run turns until the model stops calling tools or the budget is exhausted.
+ * Returns true when the task produced a final answer.
+ */
+export async function runTurn(
+  session: Session,
+  messages: any[],
+  opts: LoopOpts = {}
+): Promise<boolean> {
+  const model = session.model || process.env.TABLM_MODEL || "web-zai";
+  const ctx: ToolContext = { cwd: session.cwd };
+  let actedThisTask = messages.some((m) =>
+    Array.isArray(m.content) ? m.content.some((b: any) => b.type === "tool_result") : false
+  );
+
+  for (let turn = 0; turn < MAX_TURNS; turn++) {
+    // pair-aware compaction happens BEFORE the call, on whole rounds
+    const rounds = groupRounds(
+      messages.flatMap((m) =>
+        m.role === "assistant" && Array.isArray(m.content)
+          ? m.content.map((b: any) =>
+              b.type === "text"
+                ? { type: "assistant_text", text: b.text, at: "" }
+                : b.type === "tool_use"
+                  ? { type: "tool_use", id: b.id, name: b.name, input: b.input, at: "" }
+                  : null
+            )
+          : m.role === "user" && Array.isArray(m.content)
+            ? m.content.map((b: any) =>
+                b.type === "tool_result"
+                  ? { type: "tool_result", toolUseId: b.tool_use_id, content: typeof b.content === "string" ? b.content : JSON.stringify(b.content), at: "" }
+                  : null
+              )
+            : [{ type: m.role === "assistant" ? "assistant_text" : "user", text: typeof m.content === "string" ? m.content : "", at: "" }]
+      ).filter(Boolean) as any[]
+    );
+    const plan = planCompaction(rounds);
+    if (plan.compact) {
+      process.stderr.write(
+        `\n[compact] session too long (${totalChars(rounds)} chars) - compacting whole rounds\n`
+      );
+      messages.length = 0;
+      messages.push({ role: "user", content: plan.summary });
+      for (const r of plan.keep) {
+        const blocks: any[] = [];
+        if (r.assistantText) blocks.push({ type: "text", text: r.assistantText });
+        for (const u of r.toolUses) blocks.push({ type: "tool_use", id: u.id, name: u.name, input: u.input });
+        if (blocks.length) messages.push({ role: "assistant", content: blocks });
+        for (const res of r.toolResults) {
+          messages.push({
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: res.toolUseId, content: res.content }],
+          });
+        }
+      }
+    }
+
+    process.stderr.write(`\n--- turn ${turn + 1} [${model}] ---\n`);
+    let response: StreamResult;
+    try {
+      response = await callGateway(messages, true, model);
+    } catch (e: any) {
+      console.error(`gateway error: ${e.message}`);
+      return false;
+    }
+
+    const content = response.content;
+    const toolUses = content.filter((b: any) => b.type === "tool_use");
+
+    if (toolUses.length === 0) {
+      const text = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+      // The fix: no tools + planning prose + nothing acted on yet -> nudge, don't end.
+      if (!actedThisTask && isPlanning(text)) {
+        process.stderr.write("\n[nudge] model narrated instead of acting - pushing back once\n");
+        messages.push({ role: "assistant", content });
+        messages.push({
+          role: "user",
+          content:
+            "You described what you would do instead of doing it. Do NOT explain or plan. Call the tool NOW with a ```tooluse block.",
+        });
+        continue;
+      }
+      console.log(text);
+      return true;
+    }
+
+    messages.push({ role: "assistant", content });
+
+    for (const tu of toolUses) {
+      const tool = toolMap.get(tu.name);
+      const at = new Date().toISOString();
+      appendEvent(session.id, { type: "tool_use", id: tu.id, name: tu.name, input: tu.input, at });
+
+      let result: string;
+      if (!tool) {
+        result = `[error] unknown tool: ${tu.name}`;
+      } else {
+        // fail-closed: validate refuses unresolved payload markers
+        if (tool.validate) {
+          const refusal = tool.validate(tu.input);
+          if (refusal) {
+            result = `[error] ${refusal}`;
+            process.stderr.write(`[refused] ${tu.name}: ${refusal}\n`);
+            opts.onToolResult?.(tu.name, result.slice(0, 120));
+            messages.push({
+              role: "user",
+              content: [{ type: "tool_result", tool_use_id: tu.id, content: result }],
+            });
+            appendEvent(session.id, { type: "tool_result", toolUseId: tu.id, content: result, at });
+            continue;
+          }
+        }
+        process.stderr.write(`[run] ${tu.name} ${JSON.stringify(tu.input).slice(0, 200)}\n`);
+        try {
+          result = await tool.run(tu.input, ctx);
+        } catch (e: any) {
+          result = `[error] ${e.message}`;
+        }
+      }
+      actedThisTask = true;
+      process.stderr.write(`[result] ${result.slice(0, 300)}\n`);
+      opts.onToolResult?.(tu.name, result.slice(0, 300));
+      messages.push({
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: tu.id, content: result }],
+      });
+      appendEvent(session.id, { type: "tool_result", toolUseId: tu.id, content: result, at });
+    }
+  }
+  console.error(`reached max turns (${MAX_TURNS})`);
+  return false;
+}

@@ -2,7 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { askSite, listSites, inspectDom, screenshotSite } from "./driver.js";
+import { askSite, listSites, inspectDom, screenshotSite } from "./transport/driver.js";
 
 const server = new McpServer({ name: "tablm", version: "0.1.0" });
 

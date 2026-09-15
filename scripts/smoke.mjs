@@ -31,7 +31,9 @@ function handle(msg) {
   } else if (msg.id === 3) {
     const text = msg.result?.content?.[0]?.text ?? "";
     const parsed = JSON.parse(text);
-    const ok = Array.isArray(parsed) && parsed.every((s) => "id" in s);
+    // the first entry is an extension-bridge status header (no "id"); site entries follow
+    const sites = Array.isArray(parsed) ? parsed.filter((s) => "id" in s) : [];
+    const ok = sites.length >= 3 && sites.every((s) => "id" in s);
     console.log(ok ? "PASS list_sites:" : "FAIL list_sites:", text.slice(0, 200));
     if (!ok) failures++;
     send({
