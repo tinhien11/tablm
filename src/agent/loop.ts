@@ -143,9 +143,8 @@ export async function runTurn(
 ): Promise<boolean> {
   const model = session.model || process.env.TABLM_MODEL || "web-zai";
   const ctx: ToolContext = { cwd: session.cwd };
-  let actedThisTask = messages.some((m) =>
-    Array.isArray(m.content) ? m.content.some((b: any) => b.type === "tool_result") : false
-  );
+  // consecutive narration-nudges in this run - reset whenever tools execute
+  let nudges = 0;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     // pair-aware compaction happens BEFORE the call, on whole rounds
@@ -203,20 +202,25 @@ export async function runTurn(
 
     if (toolUses.length === 0) {
       const text = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-      // The fix: no tools + planning prose + nothing acted on yet -> nudge, don't end.
-      if (!actedThisTask && isPlanning(text)) {
-        process.stderr.write("\n[nudge] model narrated instead of acting - pushing back once\n");
+      // Planning prose with no tool call is a stall, not a final answer - push
+      // back regardless of whether the task has started (mid-task narration
+      // like "Batch 1 - core logic:" was ending the task). Bounded: after 2
+      // nudges accept the text rather than loop forever.
+      if (isPlanning(text) && nudges < 2) {
+        nudges++;
+        process.stderr.write(`\n[nudge ${nudges}/2] model narrated instead of acting - pushing back\n`);
         messages.push({ role: "assistant", content });
         messages.push({
           role: "user",
           content:
-            "You described what you would do instead of doing it. Do NOT explain or plan. Call the tool NOW with a ```tooluse block.",
+            "You described what you would do instead of doing it. Do NOT explain, plan, or announce batches. Emit the ```tooluse block for the NEXT concrete action NOW.",
         });
         continue;
       }
       console.log(text);
       return true;
     }
+    nudges = 0; // the model is acting again
 
     messages.push({ role: "assistant", content });
 
@@ -256,7 +260,6 @@ export async function runTurn(
           result = `[error] ${e.message}`;
         }
       }
-      actedThisTask = true;
       // Bound each result before it enters history: a single 17K result (or ten
       // in one round) blows past every downstream cap and gets the task cut off.
       if (result.length > MAX_RESULT_CHARS) {
