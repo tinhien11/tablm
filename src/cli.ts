@@ -719,18 +719,16 @@ CRITICAL RULES:
 9. To write files or pass any large string (>300 chars), use the payload form: set the field to "@payload:KEY" in the JSON, then output the raw content between "@@TABLM t1 KEY <<'EOF'" and "@@TABLM_END t1" lines right after the JSON. Never JSON-escape newlines or quotes - the payload is raw verbatim text.`;
 
   const messages = session.messages;
-  if (messages.length === 0) {
+
+  // Run initial prompt (if one was passed on the command line)
+  if (initialPrompt) {
     messages.push({ role: "user", content: initialPrompt });
-  } else {
-    messages.push({ role: "user", content: initialPrompt });
+    await runTurn(session, messages);
+    saveSession(session);
   }
 
-  // Run initial prompt
-  await runTurn(session, messages);
-  saveSession(session);
-
   // Interactive REPL: keep same session, accept follow-up prompts
-  process.stderr.write(`\n=== session ${session.id} (cwd: ${session.cwd}) - type follow-up or Ctrl-D to exit ===\n`);
+  process.stderr.write(`\n=== session ${session.id} (cwd: ${session.cwd}) - type a task or follow-up, Ctrl-D to exit ===\n`);
   const readline = await import("node:readline/promises");
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
   while (true) {
@@ -744,6 +742,7 @@ CRITICAL RULES:
     line = line.trim();
     if (!line) continue;
     if (line === "exit" || line === "quit") break;
+    if (!session.prompt) session.prompt = line; // first input becomes the session title
     messages.push({ role: "user", content: line });
     await runTurn(session, messages);
     saveSession(session);
