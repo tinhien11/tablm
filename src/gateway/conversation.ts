@@ -100,19 +100,34 @@ function msgSig(m: any): string {
 interface ConvState {
   sigs: string[];
   protocolSent: boolean;
+  /** chars pasted into the web chat so far - drives late rollover */
+  pasted: number;
 }
 
 const conv = new Map<string, ConvState>();
 
+/** Start a fresh web chat only after this much has been pasted into the current one. */
+function rolloverChars(): number {
+  return Number(process.env.TABLM_CHAT_ROLLOVER_CHARS || 400_000);
+}
+
 export interface BuiltPrompt {
   prompt: string;
   mode: "delta" | "full";
+  /** a web conversation already exists for this key */
+  hadConversation: boolean;
+  /** the existing chat crossed the rollover threshold - start a new one */
+  rolloverDue: boolean;
+  /** history diverged from what the chat already contains - prefix a re-sync note */
+  resync: boolean;
 }
 
 /**
  * Build the prompt to paste into the web chat. Reuses a stored signature list
  * to send only the new tail (delta) when the history is a superset of what we
- * already sent; otherwise falls back to a full re-paste.
+ * already sent. On divergence (CLI compaction, resume) the SAME chat is kept
+ * and the prompt is marked as a re-sync - a new chat is started only for a
+ * brand-new conversation or when the current one crosses the rollover budget.
  */
 export function buildPrompt(body: any, key: string): BuiltPrompt {
   const msgs: any[] = body.messages ?? [];
@@ -128,23 +143,41 @@ export function buildPrompt(body: any, key: string): BuiltPrompt {
       const delta = msgs.slice(lcp);
       let text = formatMessages(delta);
       // an oversized delta would bypass the full-mode prompt cap entirely -
-      // fall through to the full rebuild, which truncates the middle instead
-      if (text.trim() && text.length <= MAX_PROMPT_CHARS) {
+      // fall through to the full rebuild, which truncates the middle instead.
+      // Same fall-through when the chat crossed its rollover budget: the
+      // "delta" becomes the seed of a FRESH chat (gom) instead of more of the same.
+      if (
+        text.trim() &&
+        text.length <= MAX_PROMPT_CHARS &&
+        prev.pasted <= rolloverChars()
+      ) {
         if (hasTools && !prev.protocolSent) {
           const out = `[Tool use protocol]\n${toolProtocol(body.tools)}\n\n${text}`;
-          conv.set(key, { sigs, protocolSent: true });
+          conv.set(key, { sigs, protocolSent: true, pasted: prev.pasted + out.length });
           console.log(`[gateway] ${key} tool protocol injected (delta)`);
-          return { prompt: out, mode: "delta" };
+          return { prompt: out, mode: "delta", hadConversation: true, rolloverDue: false, resync: false };
         }
         if (hasTools) text += toolReminder();
-        conv.set(key, { sigs, protocolSent: prev.protocolSent });
-        return { prompt: text, mode: "delta" };
+        conv.set(key, { sigs, protocolSent: prev.protocolSent, pasted: prev.pasted + text.length });
+        return { prompt: text, mode: "delta", hadConversation: true, rolloverDue: false, resync: false };
       }
     }
   }
 
-  conv.set(key, { sigs, protocolSent: hasTools });
-  return { prompt: buildFullPrompt(body), mode: "full" };
+  const hadConversation = prev !== undefined;
+  const rolloverDue = hadConversation && prev!.pasted > rolloverChars();
+  let prompt = buildFullPrompt(body);
+  // diverged but the chat is young enough: keep it and mark the paste as a
+  // re-sync so the model treats it as the current state, not duplication
+  const resync = hadConversation && !rolloverDue;
+  if (resync) {
+    prompt =
+      "[Context re-synced - this message is the current authoritative state; it supersedes overlapping details earlier in this conversation.]\n\n" +
+      prompt;
+  }
+  const state: ConvState = { sigs, protocolSent: hasTools, pasted: prompt.length };
+  conv.set(key, state);
+  return { prompt, mode: "full", hadConversation, rolloverDue, resync };
 }
 
 export function siteFromModel(model: string | undefined): { site: string; session?: string } {

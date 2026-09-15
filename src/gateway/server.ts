@@ -94,8 +94,15 @@ async function askWithRepair(
 async function handleMessages(body: any, res: http.ServerResponse): Promise<void> {
   const { site, session } = siteFromModel(body.model);
   const sessionKey = `${site}:${session ?? "default"}`;
-  const { prompt, mode } = buildPrompt(body, sessionKey);
-  console.log(`[gateway] ${site} prompt=${prompt.length} chars (${mode})`);
+  const built = buildPrompt(body, sessionKey);
+  const { prompt, mode } = built;
+  // Start a fresh web chat ONLY when none exists or the current one crossed
+  // its rollover budget. Divergence (CLI compaction, resume, oversized delta)
+  // re-syncs the SAME chat - conversations are kept alive as long as possible.
+  const newChat = mode === "full" && (!built.hadConversation || built.rolloverDue);
+  console.log(
+    `[gateway] ${site} prompt=${prompt.length} chars (${mode})${newChat ? " NEW-CHAT" : built.resync ? " re-sync" : ""}${built.rolloverDue ? " [rollover]" : ""}`
+  );
   const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
 
   if (body.stream === true) {
@@ -130,7 +137,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
       result = await askWithRepair(
         site,
         prompt,
-        { newChat: mode === "full", session, timeoutS: 100 },
+        { newChat, session, timeoutS: 100 },
         hasTools
       );
     } catch (e) {
@@ -197,7 +204,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
 
   // non-streaming
   try {
-    const result = await askWithRepair(site, prompt, { newChat: mode === "full", session, timeoutS: 100 }, hasTools);
+    const result = await askWithRepair(site, prompt, { newChat, session, timeoutS: 100 }, hasTools);
     const parsed = parseToolCalls(result.text || "");
     const usable = parsed.calls.filter((c) => c.unresolved.length === 0);
     const content: any[] = [];

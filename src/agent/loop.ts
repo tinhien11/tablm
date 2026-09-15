@@ -40,8 +40,12 @@ interface StreamResult {
   stop_reason: string;
 }
 
-async function callGateway(messages: any[], useTools: boolean, model: string): Promise<StreamResult> {
-  const body: any = { model, max_tokens: 8192, messages, stream: true };
+async function callGateway(messages: any[], useTools: boolean, model: string, sessionId?: string): Promise<StreamResult> {
+  // The session-id suffix gives each CLI session its own gateway key AND its
+  // own long-lived web chat: resume keeps the same conversation, and gateway
+  // restarts or CLI compaction re-sync the same chat instead of starting new.
+  const wireModel = sessionId ? `${model}:${sessionId}` : model;
+  const body: any = { model: wireModel, max_tokens: 8192, messages, stream: true };
   if (useTools) {
     const { TOOLS } = await import("./tools/registry.js");
     body.tools = TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
@@ -191,7 +195,7 @@ export async function runTurn(
     process.stderr.write(`\n--- turn ${turn + 1} [${model}] ---\n`);
     let response: StreamResult;
     try {
-      response = await callGateway(messages, true, model);
+      response = await callGateway(messages, true, model, session.id);
     } catch (e: any) {
       console.error(`gateway error: ${e.message}`);
       return false;
