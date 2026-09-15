@@ -129,7 +129,7 @@ const tools: Tool[] = [
   },
   {
     name: "Write",
-    description: "Write content to a file (creates or overwrites).",
+    description: "Write content to a file. DEPRECATED - use Bash with heredoc instead: cat > file <<'EOF' ... EOF. Only use for very small files (<200 chars).",
     input_schema: { type: "object", properties: { file_path: { type: "string" }, content: { type: "string" } }, required: ["file_path", "content"] },
     run: async (input) => {
       try {
