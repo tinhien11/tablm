@@ -33,7 +33,40 @@ const PLANNING = [
   /\bi have (most of|a good|the) (picture|context|understanding)/i,
   /\bbefore (i|making|we) (make|change|edit|write|commit|doing)/i,
   /\bi('ll| will) (read|check|look|examine|see|gather|start|begin)/i,
+  // Vietnamese - the model works in the user's language, patterns must too
+  /\bbắt đầu (phase|quy trình|giai đoạn)?/i,
+  /\btôi sẽ\b/i,
+  /\blên plan\b|\blập kế hoạch\b/i,
+  /\bđọc (hết|toàn bộ|các file)\b/i,
+  /\bxem xét (toàn bộ|kỹ)\b/i,
 ];
+
+/** The model stopped to ASK PERMISSION instead of acting - same stall, politeness flavor. */
+const WAITING_FOR_USER = [
+  /just let me know/i,
+  /\bshall i\b/i,
+  /\bwant me to\b/i,
+  /\bshould i\b/i,
+  /let me know if/i,
+  /\bawaiting (your|further|the author's)? ?(confirmation|instructions|approval|input)\b/i,
+  /once (the author|you) confirms?/i,
+  /no further action is pending/i,
+  // Vietnamese
+  /\bcho tôi biết\b/i,
+  /\bnếu (bạn|cần) (muốn|xác nhận|thì)\b/i,
+  /\bchờ (bạn|xác nhận|phản hồi)\b/i,
+];
+
+/** Explicit completion markers - never nudge these, the task IS done. */
+const COMPLETION = /\bDONE\b|task complete|hoàn thành|completed successfully/i;
+
+function isPlanning(text: string): boolean {
+  return !COMPLETION.test(text) && PLANNING.some((re) => re.test(text));
+}
+
+function isWaitingForUser(text: string): boolean {
+  return !COMPLETION.test(text) && WAITING_FOR_USER.some((re) => re.test(text));
+}
 
 interface StreamResult {
   content: any[];
@@ -128,9 +161,7 @@ async function callGateway(messages: any[], useTools: boolean, model: string, se
   return { content, stop_reason: stopReason };
 }
 
-function isPlanning(text: string): boolean {
-  return PLANNING.some((re) => re.test(text));
-}
+export { isPlanning, isWaitingForUser };
 
 export interface LoopOpts {
   onToolResult?: (name: string, preview: string) => void;
@@ -206,18 +237,21 @@ export async function runTurn(
 
     if (toolUses.length === 0) {
       const text = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-      // Planning prose with no tool call is a stall, not a final answer - push
-      // back regardless of whether the task has started (mid-task narration
-      // like "Batch 1 - core logic:" was ending the task). Bounded: after 2
-      // nudges accept the text rather than loop forever.
-      if (isPlanning(text) && nudges < 2) {
+      // Planning prose OR permission-asking ("just let me know", "shall I...")
+      // is a stall, not a final answer - push back regardless of whether the
+      // task has started. Bounded: after 2 nudges accept the text.
+      const waiting = isWaitingForUser(text);
+      if ((isPlanning(text) || waiting) && nudges < 2) {
         nudges++;
-        process.stderr.write(`\n[nudge ${nudges}/2] model narrated instead of acting - pushing back\n`);
+        process.stderr.write(
+          `\n[nudge ${nudges}/2] model ${waiting ? "asked permission" : "narrated"} instead of acting - pushing back\n`
+        );
         messages.push({ role: "assistant", content });
         messages.push({
           role: "user",
-          content:
-            "You described what you would do instead of doing it. Do NOT explain, plan, or announce batches. Emit the ```tooluse block for the NEXT concrete action NOW.",
+          content: waiting
+            ? "Yes - proceed. You run autonomously and never need confirmation. Emit the ```tooluse block for that action NOW."
+            : "You described what you would do instead of doing it. Do NOT explain, plan, or announce batches. Emit the ```tooluse block for the NEXT concrete action NOW.",
         });
         continue;
       }
