@@ -41,21 +41,6 @@ curl -fsSL https://raw.githubusercontent.com/tinhien11/tablm/main/install.sh | b
 tablm "list files in this folder and explain the project"
 ```
 
-Or manually:
-
-```
-git clone https://github.com/tinhien11/tablm.git && cd tablm
-./install.sh
-```
-
-**Windows (PowerShell):**
-
-```powershell
-git clone https://github.com/tinhien11/tablm.git $env:USERPROFILE\tablm
-cd $env:USERPROFILE\tablm
-npm install; npm run build; node install.mjs
-```
-
 (Open a **new terminal** after install so `tablm` is on your PATH.)
 
 **First run:** a dedicated Chrome window opens -- sign in to your AI chat once. Cookies persist, so you only do this one time.
@@ -91,32 +76,6 @@ npm test                        # run tests (from the repo)
 curl -s http://127.0.0.1:8788/health
 tail -f ~/.tablm/gateway.log
 ```
-
-## Configuration
-
-Config lives in `~/.tablm/`: per-site settings in `sites.json`, session map in `sessions.json`.
-
-Common env vars:
-
-| Env var | Default | Purpose |
-|---|---|---|
-| `TABLM_MODEL` | `web-zai` | Model for the built-in agent |
-| `TABLM_MAX_TURNS` | `50` | Max tool round-trips per run |
-| `TABLM_GATEWAY_PORT` | `8788` | Gateway port |
-| `TABLM_CDP_URL` | `http://127.0.0.1:9222` | Chrome DevTools endpoint |
-| `TABLM_CHROME_BIN` | auto-detect | Chrome/Chromium/Edge binary |
-
-Other env vars: `TABLM_AUTH_TOKEN`, `TABLM_GATEWAY_URL`, `TABLM_GATEWAY_HTTP`, `TABLM_GATEWAY_HOST`, `TABLM_GATEWAY_TOKEN`, `TABLM_DEFAULT_SITE`, `TABLM_MAX_REPAIRS`, `TABLM_MAX_CALLS_PER_TURN` (6), `TABLM_MAX_RESULT_CHARS` (8000), `TABLM_CHAT_ROLLOVER_CHARS` (250000 - chars pasted into one web chat before it rolls over to a fresh one), `TABLM_TRANSPORT`, `TABLM_NO_LOCAL_CHROME`, `TABLM_CHROME_PROFILE`, `TABLM_BRIDGE_PORT`, `TABLM_BRIDGE_TOKEN`, `TABLM_SITES_CONFIG`, `TABLM_SESSIONS`
-
-## Remote browser (optional)
-
-Running the gateway in a VM/container but want to use your **real** Chrome profile on the host? Enable extension mode:
-
-1. Gateway: `TABLM_TRANSPORT=extension` (bridge on `ws://0.0.0.0:8765`)
-2. Host Chrome: `chrome://extensions` -- Developer mode -- Load unpacked
-3. Extension popup: enter `ws://GATEWAY_IP:8765` + token -- Connect
-
-Supports chatgpt, kimi, glm/z.ai, gemini, grok.
 
 ## Troubleshooting
 
