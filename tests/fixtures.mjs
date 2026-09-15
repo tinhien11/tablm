@@ -56,3 +56,14 @@ export const JSON_FENCE_CALL =
 
 // Bare JSON, backticks stripped by the web chat.
 export const BARE_JSON_CALL = '{"id":"t1","name":"Bash","input":{"command":"pwd"}}';
+
+// Contract v5: the model writes @TBF@ instead of literal ``` inside payloads
+// (the web UI's markdown renderer eats literal fences).
+export const PAYLOAD_WITH_TBF_TOKEN =
+  '```tooluse\n' +
+  '{"id":"t1","name":"Write","input":{"file_path":"/tmp/x.md","content":"@payload:content"}}\n' +
+  "@@TABLM t1 content <<'EOF'\n" +
+  '# Title\n\n' +
+  '@TBF@bash\necho hi\n@TBF@\n' +
+  '@@TABLM_END t1\n' +
+  '```';

@@ -11,6 +11,7 @@ import {
   MULTI_CALL,
   JSON_FENCE_CALL,
   BARE_JSON_CALL,
+  PAYLOAD_WITH_TBF_TOKEN,
 } from "./fixtures.mjs";
 
 let pass = 0;
@@ -110,8 +111,17 @@ t("extractJsonObject returns null when truncated", () => {
   assert.equal(extractJsonObject('{"a":"b"', 0), null);
 });
 
+t("payload @TBF@ token restores to real backticks (contract v5)", () => {
+  const r = parseToolCalls(PAYLOAD_WITH_TBF_TOKEN);
+  assert.equal(r.calls.length, 1);
+  assert.equal(r.calls[0].unresolved.length, 0);
+  assert.ok(r.calls[0].input.content.includes("```bash\necho hi\n```"), "restored fences");
+  assert.ok(!r.calls[0].input.content.includes("@TBF@"), "token fully replaced");
+});
+
 console.log(`\n${fail.length === 0 ? "ALL PASS" : `${fail.length} FAILED`} (${pass} passed)`);
 if (fail.length) {
   for (const f of fail) console.log("  FAILED: " + f.name + " :: " + f.msg);
   process.exit(1);
 }
+

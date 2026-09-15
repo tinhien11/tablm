@@ -46,6 +46,20 @@ export function payloadKey(value: string): string | null {
 }
 
 /**
+ * Restore markdown-fence placeholders inside resolved payload content.
+ *
+ * The web UI renders the model's response as markdown before we extract it,
+ * so literal ``` inside a payload CLOSES the model's own code fence and the
+ * remainder of the payload gets markdown-stripped. The contract (v5) tells
+ * the model to write @TBF@ instead; this restores the real backticks after
+ * the payload has been resolved verbatim. Only called on payload content,
+ * so a stray @TBF@ in normal prose is never touched.
+ */
+export function restorePayloadPlaceholders(content: string): string {
+  return content.replace(/@TBF@/g, "```");
+}
+
+/**
  * Merge a truncated payload with its continuation. The model often repeats a
  * few characters/lines from before the cut, so we detect the maximal overlap
  * between the tail of the original and the head of the continuation.

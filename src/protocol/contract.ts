@@ -5,7 +5,7 @@
 // Bump PROTOCOL_VERSION whenever the wire format changes; the gateway tags
 // prompts so stale sessions degrade predictably instead of silently misparsing.
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 const FENCE = "```tooluse";
 
@@ -29,6 +29,12 @@ export function toolProtocol(tools: any[]): string {
     "<raw text here - real newlines, real quotes, NO \\n escapes, NO JSON escaping>",
     "@@TABLM_END t1",
     "The payload is taken VERBATIM. Do not escape anything inside it.",
+    "",
+    "CRITICAL - the web UI eats markdown: your response is rendered before we read it.",
+    "Three backticks inside a payload CLOSE your own code fence and the rest of the",
+    "payload gets markdown-stripped. Inside payload content, NEVER type three",
+    "backticks - write the token @TBF@ instead; the gateway restores it to real",
+    "backticks automatically. (Other markdown like # or ** is safe inside payloads.)",
     "",
     "EXAMPLE - write a file:",
     FENCE,

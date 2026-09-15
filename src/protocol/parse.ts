@@ -5,7 +5,7 @@
 // is returned as unresolved: true. Callers MUST NOT execute such a call -
 // executing it would write the literal 16-char placeholder to a file.
 
-import { findPayload, isPayloadRef, payloadKey } from "./payload.js";
+import { findPayload, isPayloadRef, payloadKey, restorePayloadPlaceholders } from "./payload.js";
 
 export interface ParsedCall {
   name: string;
@@ -87,7 +87,7 @@ function resolvePayloads(
     const key = payloadKey(v as string)!;
     const found = findPayload(text, from, call.id || "1", key);
     if (found.content !== null) {
-      call.input[k] = found.content;
+      call.input[k] = restorePayloadPlaceholders(found.content);
     } else {
       unresolved.push(key);
       truncatedOut.push({ id: call.id || "1", key });
