@@ -80,6 +80,11 @@ mkdir -p "$HOME/.tablm"
 tail -n 50 -f "$HOME/.tablm/gateway.log"
 EOF
 chmod 755 "$BIN_DIR/tablm-logs"
+cat > "$BIN_DIR/tablm-cli" <<EOF
+#!/usr/bin/env bash
+exec node "$DIR/dist/cli.js" "$@"
+EOF
+chmod 755 "$BIN_DIR/tablm-cli"
 
 if [ -n "${TABLM_GATEWAY_HOST:-}" ]; then
   sed -i.bak "s|^exec node|export TABLM_GATEWAY_HOST=\"$TABLM_GATEWAY_HOST\"\\nexec node|" "$BIN_DIR/tablm-gateway" && rm -f "$BIN_DIR/tablm-gateway.bak"
@@ -196,6 +201,7 @@ echo "   2. Model ids:      web-chatgpt | web-zai | web-kimi"
 echo "      switch with:    tablm --model web-zai"
 echo
 echo "   Useful commands:"
+echo "     tablm-cli       built-in chat CLI (works even without the claude CLI)"
 echo "     tablm-status    gateway + Chrome + sites health"
 echo "     tablm-logs      tail the gateway log"
 echo "     npm test        MCP smoke test (in $DIR)"
