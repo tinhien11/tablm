@@ -5,10 +5,10 @@ Use web AI chats (ChatGPT, Z.ai GLM, Kimi) as local models - no API keys, no Ant
 ## Architecture
 
 ```
-tablm-cli (agent)          gateway (translator)         web chat (model)
+tablm (agent)              gateway (translator)         web chat (model)
      │                          │                            │
      │── user prompt ──────────>│                            │
-     │   + 6 tools schema        │── paste prompt ───────────>│
+     │   + 12 tools schema      │── paste prompt ───────────>│
      │                          │   + tool protocol block     │
      │                          │<── text streaming ──────────│
      │                          │    (may contain ```tooluse```)│
@@ -26,7 +26,7 @@ tablm-cli (agent)          gateway (translator)         web chat (model)
 Two clients drive the same gateway (`:8788`):
 
 - **Claude Code** (MCP mode): sends 100+ tools + full system prompt. Gateway forwards to web model, translates ```tooluse``` blocks back into Anthropic `tool_use` SSE events. Claude Code executes tools locally.
-- **tablm-cli** (lean agent): 6 tools (Bash, Read, Write, Edit, Grep, Glob), short system prompt. ~95% smaller prompt than Claude Code. REPL session mode keeps context across follow-up prompts.
+- **tablm** (built-in lean agent, the default): 12 tools (Bash, Read, Write, Edit, Grep, Glob + browser tools), short system prompt. ~95% smaller prompt than Claude Code. REPL session mode keeps context across follow-up prompts.
 
 The web model has no real tool API. The gateway injects a `[Tool use protocol]` text block teaching the model to emit ```tooluse {"name":"Bash","input":{...}}``` fenced blocks. The gateway parses those into `tool_use` events; the client executes the tool and sends `tool_result` back; the gateway pastes it into the same web chat conversation (session mapping in `~/.tablm/sessions.json`).
 
@@ -34,7 +34,7 @@ Each tool round-trip is one web chat call (8-30s latency).
 
 ## Install
 
-Requirements: Node.js 18+, git, Google Chrome/Chromium/Edge, [Claude Code](https://claude.com/claude-code) CLI.
+Requirements: Node.js 18+, git, Google Chrome/Chromium/Edge. Claude Code CLI is optional - `tablm` is the default built-in client (`tablm claude` routes the Claude Code CLI through the gateway when installed).
 
 ### Linux / macOS
 
@@ -64,12 +64,15 @@ Launchers (`tablm`, `tablm-status`, `tablm-logs`, `tablm-gateway`) are `.cmd` fi
 
 First run: a dedicated Chrome window opens (`~/.tablm/chrome-profile`). Sign in to the sites you want once - cookies persist.
 
-### tablm-cli
+### tablm CLI (built-in - the default client)
 
 ```bash
-tablm-cli "read HANDOFF.md and continue the loop"
+tablm "read HANDOFF.md and continue the loop"
 > grep for X in the findings index      # follow-up, same session
 > exit
+
+tablm claude                            # route the claude CLI through the gateway (if installed)
+tablm codex                             # route the codex CLI through the gateway (if installed)
 ```
 
 Env: `TABLM_MODEL` (default `web-zai`), `TABLM_MAX_TURNS` (default 50), `TABLM_GATEWAY_URL` (default `http://127.0.0.1:8788`), `TABLM_AUTH_TOKEN` (default `tablm`).

@@ -48,7 +48,7 @@ echo "[4/6] Installing gateway launcher + autostart"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
 mkdir -p "$BIN_DIR" "$APP_DIR" "$HOME/.config/autostart"
-rm -f "$BIN_DIR/tablm-chrome" "$BIN_DIR/tablm-claude" "$BIN_DIR/tablm-gateway" "$APP_DIR/tablm.desktop" "$HOME/.config/autostart/tablm-chrome.desktop"
+rm -f "$BIN_DIR/tablm-chrome" "$BIN_DIR/tablm-claude" "$BIN_DIR/tablm-cli" "$BIN_DIR/tablm-gateway" "$APP_DIR/tablm.desktop" "$HOME/.config/autostart/tablm-chrome.desktop"
 # systemd user services run with a minimal PATH that excludes nvm/volta, so resolve
 # the node binary to an absolute path now and bake it into the launchers.
 NODE_BIN="$(command -v node)"
@@ -63,11 +63,18 @@ cat > "$BIN_DIR/tablm" <<EOF
 export ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-http://127.0.0.1:8788}"
 export ANTHROPIC_AUTH_TOKEN="\${ANTHROPIC_AUTH_TOKEN:-tablm}"
 export ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-web-zai}"
-if command -v claude >/dev/null 2>&1; then
-  exec claude "\$@"
-fi
-# claude CLI not installed - use the built-in chat CLI (same gateway, same model ids)
-echo "claude CLI not found - using built-in tablm CLI (npm i -g @anthropic-ai/claude-code for the real one)" >&2
+# client selection: "tablm claude ..." / "tablm codex ..." pick an external
+# client; bare tablm (or any other first arg) runs the built-in chat CLI
+case "\$1" in
+  claude|codex)
+    client="\$1"; shift
+    if ! command -v "\$client" >/dev/null 2>&1; then
+      echo "\$client CLI not installed" >&2
+      exit 1
+    fi
+    exec "\$client" "\$@"
+    ;;
+esac
 export TABLM_GATEWAY_URL="\$ANTHROPIC_BASE_URL" TABLM_AUTH_TOKEN="\$ANTHROPIC_AUTH_TOKEN" TABLM_MODEL="\$ANTHROPIC_MODEL"
 exec "$NODE_BIN" "$DIR/dist/cli.js" "\$@"
 EOF
@@ -90,12 +97,6 @@ mkdir -p "$HOME/.tablm"
 tail -n 50 -f "$HOME/.tablm/gateway.log"
 EOF
 chmod 755 "$BIN_DIR/tablm-logs"
-cat > "$BIN_DIR/tablm-cli" <<EOF
-#!/usr/bin/env bash
-export PATH="$(dirname "$NODE_BIN"):\$PATH"
-exec "$NODE_BIN" "$DIR/dist/cli.js" "\$@"
-EOF
-chmod 755 "$BIN_DIR/tablm-cli"
 
 if [ -n "${TABLM_GATEWAY_HOST:-}" ]; then
   sed -i.bak "s|^exec node|export TABLM_GATEWAY_HOST=\"$TABLM_GATEWAY_HOST\"\\nexec node|" "$BIN_DIR/tablm-gateway" && rm -f "$BIN_DIR/tablm-gateway.bak"
@@ -212,7 +213,9 @@ echo "   2. Model ids:      web-chatgpt | web-zai | web-kimi"
 echo "      switch with:    tablm --model web-zai"
 echo
 echo "   Useful commands:"
-echo "     tablm-cli       built-in chat CLI (works even without the claude CLI)"
+echo "     tablm           built-in chat CLI (the default client)"
+echo "     tablm claude    run the claude CLI through the gateway (if installed)"
+echo "     tablm codex     run the codex CLI through the gateway (if installed)"
 echo "     tablm-status    gateway + Chrome + sites health"
 echo "     tablm-logs      tail the gateway log"
 echo "     npm test        MCP smoke test (in $DIR)"

@@ -5,8 +5,7 @@
   "type": "module",
   "bin": {
     "tablm": "dist/index.js",
-    "tablm-gateway": "dist/gateway.js",
-    "tablm-cli": "dist/cli.js"
+    "tablm-gateway": "dist/gateway.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

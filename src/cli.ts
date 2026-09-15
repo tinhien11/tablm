@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tablm-cli entrypoint. Thin: parsing here, work in src/agent.
+// tablm entrypoint (built-in chat CLI). Thin: parsing here, work in src/agent.
 
 import {
   genSessionId,
@@ -58,13 +58,13 @@ async function main() {
   if (args[0] === "--resume" || args[0] === "-r") {
     const id = args[1];
     if (!id) {
-      console.error("usage: tablm-cli --resume <session-id> [follow-up prompt]");
+      console.error("usage: tablm --resume <session-id> [follow-up prompt]");
       process.exit(1);
     }
     const loaded = loadMeta(id);
     if (!loaded) {
       console.error(`session not found: ${id}`);
-      console.error("run: tablm-cli --list");
+      console.error("run: tablm --list");
       process.exit(1);
     }
     session = loaded;
