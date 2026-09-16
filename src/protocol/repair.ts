@@ -103,18 +103,33 @@ export async function repairTruncatedPayload(
   return null;
 }
 
-/** Repair a truncated JSON header by asking for the remainder and concatenating. */
+/** Repair a truncated JSON header: ask for the remainder, dedupe overlap,
+ *  concatenate - iteratively (up to 3 continuations) since a long heredoc
+ *  command may need several rounds to complete. */
 export async function repairTruncatedJson(
   rawText: string,
   ask: (prompt: string) => Promise<string>
 ): Promise<string | null> {
-  const continuation =
-    "Continue. Your previous response was cut off. Output ONLY the remaining part of the JSON tool call, " +
-    "starting from where you stopped. Do NOT repeat the beginning.";
-  const cont = await ask(continuation);
-  if (!cont) return null;
-  const merged = rawText + cont;
-  if (parseToolCalls(merged).calls.length) return merged;
+  let merged = rawText;
+  for (let round = 0; round < 3; round++) {
+    const continuation =
+      "Continue. Your previous response was cut off. Output ONLY the remaining part of the JSON tool call, " +
+      "starting from where you stopped. Do NOT repeat the beginning.";
+    const cont = await ask(continuation);
+    if (!cont) return null;
+    // overlap dedup: the site often repeats a tail chunk of what it already sent
+    const tail = merged.slice(-2000);
+    let overlap = 0;
+    const maxN = Math.min(tail.length, cont.length);
+    for (let n = maxN; n > 0; n--) {
+      if (tail.endsWith(cont.slice(0, n))) {
+        overlap = n;
+        break;
+      }
+    }
+    merged += cont.slice(overlap);
+    if (parseToolCalls(merged).calls.length) return merged;
+  }
   return null;
 }
 
