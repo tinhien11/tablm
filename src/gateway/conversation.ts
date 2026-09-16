@@ -107,10 +107,10 @@ interface ConvState {
 const conv = new Map<string, ConvState>();
 
 /** Start a fresh web chat only after this much has been pasted into the current one.
- * 250k chars (~60k tokens) keeps the web model well inside its working memory -
- * past that it starts ignoring instructions ("too long to accept new commands"). */
+ * 400k chars keeps a conversation alive through many compaction re-syncs - new
+ * chats are for genuinely worn-out conversations, not for length hiccups. */
 function rolloverChars(): number {
-  return Number(process.env.TABLM_CHAT_ROLLOVER_CHARS || 250_000);
+  return Number(process.env.TABLM_CHAT_ROLLOVER_CHARS || 400_000);
 }
 
 export interface BuiltPrompt {

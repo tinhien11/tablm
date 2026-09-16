@@ -78,12 +78,16 @@ export function groupRounds(events: LogEvent[]): Round[] {
   return rounds;
 }
 
-const COMPACT_THRESHOLD_CHARS = 50_000;
-const COMPACT_KEEP_ROUNDS = 6;
+// Compaction sizing. All env-tunable: long-running sessions should compact
+// LATE (big threshold, generous keep budget) - compacting early re-syncs a
+// ~60K context paste into the web chat, which inflates its rollover counter
+// and starts new chats prematurely.
+const COMPACT_THRESHOLD_CHARS = Number(process.env.TABLM_COMPACT_THRESHOLD_CHARS || 150_000);
+const COMPACT_KEEP_ROUNDS = 8;
 /** Post-compaction budget for the kept (recent) rounds. */
-const KEEP_BUDGET_CHARS = 30_000;
+const KEEP_BUDGET_CHARS = Number(process.env.TABLM_COMPACT_KEEP_BUDGET || 60_000);
 /** Per-result cap inside kept rounds - bounds a single monster round. */
-const KEPT_RESULT_CHARS = 4_000;
+const KEPT_RESULT_CHARS = Number(process.env.TABLM_KEPT_RESULT_CHARS || 6_000);
 
 function roundChars(r: Round): number {
   let n = (r.assistantText ?? "").length;

@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { groupRounds, planCompaction, totalChars } from "../dist/agent/rounds.js";
+
+// keep the test fast: default threshold is 150K in production, tests exercise
+// the same mechanics with a small threshold (defaults are env-tunable).
+// env MUST be set before the dynamic import - the module reads it at load.
+process.env.TABLM_COMPACT_THRESHOLD_CHARS = "50000";
+const { groupRounds, planCompaction, totalChars } = await import("../dist/agent/rounds.js");
 
 let pass = 0;
 const fail = [];
@@ -44,10 +49,10 @@ t("monster recent round gets clamped and bounded", () => {
   const plan = planCompaction(rounds);
   assert.equal(plan.compact, true, "must compact");
   const kept = totalChars(plan.keep);
-  assert.ok(kept < 40000, `kept tail must be bounded, got ${kept}`);
+  assert.ok(kept < 70000, `kept tail must be bounded, got ${kept}`);
   const monster = plan.keep.flatMap((r) => r.toolResults).find((r) => r.toolUseId === "monster");
   assert.ok(monster, "most recent round must be kept");
-  assert.ok(monster.content.length < 5000, `monster result must be clamped, got ${monster.content.length}`);
+  assert.ok(monster.content.length < 7000, `monster result must be clamped, got ${monster.content.length}`);
   assert.ok(monster.content.startsWith("xxxxx"), "clamped result keeps its head");
 });
 
@@ -81,7 +86,7 @@ t("WORST CASE with enforced cap: single round bounded at 6 x 8K", () => {
   // The enforced per-turn cap (6 calls) bounds one round's growth at
   // 6 x 8000 = 48K (+ overhead) - regardless of what the model emits.
   // Layered invariants from here:
-  //   compaction (fires >= 50K) clamps kept results to 4K -> tail ~24K
+  //   compaction (fires >= threshold) clamps kept results to 6K -> tail <= 60K budget
   //   gateway hard-caps any prompt at 60K, truncating the middle
   const events = [ev({ type: "user", text: "task" })];
   events.push(ev({ type: "assistant_text", text: "all at once" }));
@@ -94,13 +99,13 @@ t("WORST CASE with enforced cap: single round bounded at 6 x 8K", () => {
   const kept = plan.compact ? totalChars(plan.keep) : totalChars(rounds);
   assert.ok(kept < 52000, `worst-case single round must be bounded near 48K, got ${kept}`);
 
-  // once history crosses the compaction threshold, the kept tail is ~24K
+  // once history crosses the compaction threshold, the kept tail fits the budget
   events.push(ev({ type: "assistant_text", text: "more" }));
   events.push(ev({ type: "tool_use", id: "v", name: "Read", input: { file_path: "g" } }));
   events.push(ev({ type: "tool_result", toolUseId: "v", content: "r".repeat(8000) }));
   const plan2 = planCompaction(groupRounds(events));
-  assert.equal(plan2.compact, true, "crossing 50K must compact");
-  assert.ok(totalChars(plan2.keep) <= 30000, `post-compaction tail must fit budget, got ${totalChars(plan2.keep)}`);
+  assert.equal(plan2.compact, true, "crossing threshold must compact");
+  assert.ok(totalChars(plan2.keep) <= 60000, `post-compaction tail must fit budget, got ${totalChars(plan2.keep)}`);
 });
 
 console.log(`\n${fail.length === 0 ? "ALL PASS" : `${fail.length} FAILED`} (${pass} passed)`);
