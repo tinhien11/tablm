@@ -14,6 +14,7 @@ import { groupRounds, planCompaction, totalChars } from "./rounds.js";
 import { toolMap } from "./tools/registry.js";
 import type { ToolContext } from "./tools/index.js";
 import { parseToolCalls } from "../protocol/parse.js";
+import { extractNarratedCommand, isSafeAutoexecCommand } from "../protocol/repair.js";
 
 const GATEWAY = process.env.TABLM_GATEWAY_URL || "http://127.0.0.1:8788";
 const AUTH_TOKEN = process.env.TABLM_AUTH_TOKEN || "tablm";
@@ -184,6 +185,8 @@ export async function runTurn(
   let nudges = 0;
   // truncated/empty site responses - each retry continues the same stream
   let truncRetries = 0;
+  // narrated read-only commands materialized by the harness (chatgpt habit)
+  let autoexecs = 0;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     // pair-aware compaction happens BEFORE the call, on whole rounds
@@ -315,6 +318,25 @@ export async function runTurn(
         messages.push({ role: "user", content: nudgeText });
         continue;
       }
+      // NARRATED COMMAND materialization: the model described an exact shell
+      // command instead of emitting a block (chatgpt habit). For safe read-only
+      // commands we run it ourselves and feed the real result back - progress
+      // instead of a stall. State-changing commands still require real blocks.
+      const narrated = text ? extractNarratedCommand(text) : null;
+      if (narrated && isSafeAutoexecCommand(narrated) && autoexecs < 5) {
+        autoexecs++;
+        process.stderr.write(`\n[autoexec ${autoexecs}] narrated command materialized: ${narrated.slice(0, 100)}\n`);
+        const tool = toolMap.get("Bash")!;
+        const result = await tool.run({ command: narrated }, ctx);
+        messages.push({ role: "assistant", content });
+        messages.push({
+          role: "user",
+          content: `[harness auto-executed your narrated command (read-only)]:\n${narrated}\n\nResult:\n${result}\n\nContinue the task. For file writes or state-changing actions emit a fenced tooluse block.`,
+        });
+        appendEvent(session.id, { type: "user", text: `[autoexec] ${narrated}`, at: new Date().toISOString() });
+        continue;
+      }
+
       // the model's own final answer is model-visible on follow-ups => logged
       appendEvent(session.id, { type: "assistant_text", text, at: new Date().toISOString() });
       console.log(text);

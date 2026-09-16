@@ -122,6 +122,17 @@ export async function repairTruncatedJson(
  */
 const NEGATION = /\b(not installed|command not found|does not resolve|no (credentials|access)|cannot be found|unavailable)\b/i;
 
+/** Read-only commands the harness may auto-execute when the model narrates
+ *  instead of emitting a block. State-changing verbs stay out on purpose. */
+const AUTOEXEC_ALLOW = /^(?:[A-Z_][A-Z0-9_]*=\S*\s+)*(?:gh|git|ls|cat|head|tail|grep|rg|find|wc|which|echo|pwd|node\s+-e\s+["']?console|npm\s+(?:test|run)\b)\b/;
+const AUTOEXEC_FORBID = /\b(?:rm|mv|mkfs|dd|shutdown|reboot|apt|apt-get|sudo|pip\s+install|npm\s+(?:i|install)|git\s+(?:push|reset|clean|checkout)\b)\b|>{1,2}\s*\S/i;
+
+export function isSafeAutoexecCommand(cmd: string): boolean {
+  const c = cmd.trim();
+  if (AUTOEXEC_FORBID.test(c)) return false;
+  return AUTOEXEC_ALLOW.test(c);
+}
+
 export function extractNarratedCommand(text: string): string | null {
   const cleaned = text.replace(/```[a-z]*\n?/gi, "");
   const re = /^\s*(?:[$>]+\s*)?((?:[A-Z_]+=\S+\s+)?(?:gh|git|npm|npx|node|python3?|curl|cat|ls|find|rg|sed|awk|head|tail|grep|echo|make|docker|kubectl|wc)\b.*)$/gim;
