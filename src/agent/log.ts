@@ -13,7 +13,9 @@ export type LogEvent =
   | { type: "assistant_text"; text: string; at: string }
   | { type: "tool_use"; id: string; name: string; input: any; at: string }
   | { type: "tool_result"; toolUseId: string; content: string; at: string }
-  | { type: "compact"; summary: string; at: string };
+  | { type: "compact"; summary: string; at: string }
+  /** failed gateway turn - logged for postmortem, NEVER sent to the model */
+  | { type: "attempt"; status: "error" | "timeout"; detail: string; at: string };
 
 export interface Session {
   id: string;

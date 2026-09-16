@@ -12,7 +12,7 @@ import {
 } from "./agent/log.js";
 import { repl } from "./agent/repl.js";
 import { closeScratchPage } from "./agent/tools/registry.js";
-import { groupRounds } from "./agent/rounds.js";
+import { deriveMessages } from "./agent/rounds.js";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -84,16 +84,10 @@ async function main() {
     };
   }
 
-  // Rebuild the message array from the append-only event log via round grouping.
-  const events = readEvents(session.id);
-  const messages: any[] = [];
-  for (const r of groupRounds(events)) {
-    if (r.assistantText) messages.push({ role: "assistant", content: [{ type: "text", text: r.assistantText }] });
-    for (const u of r.toolUses) messages.push({ role: "assistant", content: [{ type: "tool_use", id: u.id, name: u.name, input: u.input }] });
-    for (const res of r.toolResults) {
-      messages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: res.toolUseId, content: res.content }] });
-    }
-  }
+  // THE single projection: rebuild messages exactly as the live loop sees
+  // them (same function the loop uses for its own context) - one mapper,
+  // no drift between resume and live shapes.
+  const messages = deriveMessages(readEvents(session.id));
 
   await repl(session, messages, initialPrompt);
   await closeScratchPage();

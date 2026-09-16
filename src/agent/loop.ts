@@ -209,7 +209,25 @@ export async function runTurn(
       );
       messages.length = 0;
       messages.push({ role: "user", content: plan.summary });
+      // persist: the compact event supersedes prior history on derive, then
+      // the kept rounds are re-appended so --resume rebuilds the same tail
+      appendEvent(session.id, { type: "compact", summary: plan.summary, at: new Date().toISOString() });
+      const keptAt = new Date().toISOString();
       for (const r of plan.keep) {
+        if (r.assistantText) {
+          appendEvent(session.id, { type: "assistant_text", text: r.assistantText, at: keptAt });
+        }
+        for (const u of r.toolUses) {
+          appendEvent(session.id, { type: "tool_use", id: u.id, name: u.name, input: u.input, at: keptAt });
+        }
+        for (const res of r.toolResults) {
+          appendEvent(session.id, {
+            type: "tool_result",
+            toolUseId: res.toolUseId,
+            content: res.content,
+            at: keptAt,
+          });
+        }
         const blocks: any[] = [];
         if (r.assistantText) blocks.push({ type: "text", text: r.assistantText });
         for (const u of r.toolUses) blocks.push({ type: "tool_use", id: u.id, name: u.name, input: u.input });
@@ -229,6 +247,14 @@ export async function runTurn(
       response = await callGateway(messages, true, model, session.id);
     } catch (e: any) {
       console.error(`gateway error: ${e.message}`);
+      // dsh assistant/attempt pattern: log the failure for postmortem WITHOUT
+      // feeding it to the model - deriveMessages drops attempt events
+      appendEvent(session.id, {
+        type: "attempt",
+        status: "error",
+        detail: String(e.message ?? e).slice(0, 500),
+        at: new Date().toISOString(),
+      });
       return false;
     }
 
@@ -247,19 +273,27 @@ export async function runTurn(
           `\n[nudge ${nudges}/2] model ${waiting ? "asked permission" : "narrated"} instead of acting - pushing back\n`
         );
         messages.push({ role: "assistant", content });
-        messages.push({
-          role: "user",
-          content: waiting
-            ? "Yes - proceed. You run autonomously and never need confirmation. Emit the ```tooluse block for that action NOW."
-            : "You described what you would do instead of doing it. Do NOT explain, plan, or announce batches. Emit the ```tooluse block for the NEXT concrete action NOW.",
-        });
+        const nudgeText = waiting
+          ? "Yes - proceed. You run autonomously and never need confirmation. Emit the ```tooluse block for that action NOW."
+          : "You described what you would do instead of doing it. Do NOT explain, plan, or announce batches. Emit the ```tooluse block for the NEXT concrete action NOW.";
+        // model-visible => logged (the derive invariant)
+        appendEvent(session.id, { type: "user", text: nudgeText, at: new Date().toISOString() });
+        messages.push({ role: "user", content: nudgeText });
         continue;
       }
+      // the model's own final answer is model-visible on follow-ups => logged
+      appendEvent(session.id, { type: "assistant_text", text, at: new Date().toISOString() });
       console.log(text);
       return true;
     }
     nudges = 0; // the model is acting again
 
+    // log the assistant text that accompanied the tool calls (derive renders
+    // it as the text block of the same assistant message)
+    const turnText = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+    if (turnText) {
+      appendEvent(session.id, { type: "assistant_text", text: turnText, at: new Date().toISOString() });
+    }
     messages.push({ role: "assistant", content });
 
     // enforce the parallel-call cap: execute the first N, give the rest a

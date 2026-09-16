@@ -9,11 +9,6 @@ export async function repl(session: Session, messages: any[], initialPrompt?: st
     messages.push({ role: "user", content: initialPrompt });
     await runTurn(session, messages);
     saveMeta(session);
-    appendEvent(session.id, {
-      type: "assistant_text",
-      text: "(turn complete)",
-      at: new Date().toISOString(),
-    });
   }
 
   process.stderr.write(

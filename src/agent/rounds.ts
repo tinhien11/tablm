@@ -11,6 +11,8 @@ export interface Round {
   assistantText?: string;
   toolUses: { id: string; name: string; input: any }[];
   toolResults: { toolUseId: string; content: string }[];
+  /** round synthesized from a compact event - renders as USER role, not assistant */
+  fromCompact?: boolean;
 }
 
 export function groupRounds(events: LogEvent[]): Round[] {
@@ -40,7 +42,7 @@ export function groupRounds(events: LogEvent[]): Round[] {
         rounds.push(current);
         current = null;
       }
-      rounds.push({ assistantText: ev.summary, toolUses: [], toolResults: [] });
+      rounds.push({ assistantText: ev.summary, toolUses: [], toolResults: [], fromCompact: true });
       continue;
     }
     if (ev.type === "assistant_text") {
@@ -156,4 +158,64 @@ export function planCompaction(rounds: Round[]): {
   const summary =
     `[Session compacted. Previous conversation summary:\n${parts.join("\n")}\nEnd of summary. Continue from here.]`;
   return { compact: true, summary, keep };
+}
+
+/**
+ * THE canonical projection from the event log to gateway messages.
+ *
+ * Live loop, compaction rebuild and --resume all render through this one
+ * function. Three independent mappers drifting apart was the resume-shape
+ * desync bug; this is the dsh "model-visible means logged" invariant adapted:
+ * everything the model sees is derived from the log, everything logged and
+ * model-visible derives through here. Attempt events are logged but never
+ * model-visible, so they are dropped by design.
+ */
+export function deriveMessages(events: LogEvent[]): any[] {
+  // Single-pass projection - user messages included. groupRounds is for SIZE
+  // accounting; this is the model-context walk, and dropping user turns here
+  // was exactly the bug that made --resume lose the original task.
+  let lastCompact = -1;
+  events.forEach((e, i) => {
+    if (e.type === "compact") lastCompact = i;
+  });
+  const slice = lastCompact === -1 ? events : events.slice(lastCompact + 1);
+  const out: any[] = [];
+  if (lastCompact !== -1) {
+    out.push({ role: "user", content: (events[lastCompact] as { summary: string }).summary });
+  }
+  let blocks: any[] | null = null; // current assistant message under construction
+  const flush = () => {
+    if (blocks) {
+      out.push({ role: "assistant", content: blocks });
+      blocks = null;
+    }
+  };
+  for (const ev of slice) {
+    if (ev.type === "user") {
+      flush();
+      out.push({ role: "user", content: ev.text });
+    } else if (ev.type === "assistant_text") {
+      if (!blocks) {
+        blocks = [{ type: "text", text: ev.text }];
+      } else if (blocks.some((b) => b.type === "tool_use")) {
+        // text after tools = the model's next utterance, own message
+        flush();
+        blocks = [{ type: "text", text: ev.text }];
+      } else {
+        blocks[0].text += ev.text; // streaming deltas of the same utterance
+      }
+    } else if (ev.type === "tool_use") {
+      if (!blocks) blocks = [];
+      blocks.push({ type: "tool_use", id: ev.id, name: ev.name, input: ev.input });
+    } else if (ev.type === "tool_result") {
+      flush();
+      out.push({
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: ev.toolUseId, content: ev.content }],
+      });
+    }
+    // attempt events: logged, never model-visible
+  }
+  flush();
+  return out;
 }
