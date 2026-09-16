@@ -37,7 +37,8 @@ export const SITES: Record<string, SiteConfig> = {
     extSite: "chatgpt",
     label: "ChatGPT (chatgpt.com)",
     hosts: ["chatgpt.com", "chat.openai.com"],
-    newChatUrl: "https://chatgpt.com/",
+    // temporary chat: no server-side history retention, fewer UI surprises
+    newChatUrl: "https://chatgpt.com/?temporary-chat=true",
     conversationUrl: (id) => `https://chatgpt.com/c/${id}`,
     selectors: {
       composer: ["#prompt-textarea", 'div[contenteditable="true"]', "textarea"],
