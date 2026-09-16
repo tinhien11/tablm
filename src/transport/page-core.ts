@@ -139,7 +139,11 @@ export async function pageTurn(cfg: any): Promise<TurnResult> {
     };
   }
 
-  const baseline = messageNodes().map(readMessage);
+  // Only the newest few messages matter for detecting the response. Reading
+  // every node's innerText each poll is O(conversation size) of forced layout
+  // - on long chats that froze the visible page.
+  const READ_WINDOW = 8;
+  const baseline = messageNodes().slice(-READ_WINDOW).map(readMessage);
 
   let userTouched = false;
   const noteUserInput = (e: Event) => {
@@ -254,7 +258,7 @@ export async function pageTurn(cfg: any): Promise<TurnResult> {
   let candEl: Element | null = null;
   while (Date.now() < deadline) {
     const active = generating();
-    const nodes = messageNodes();
+    const nodes = messageNodes().slice(-READ_WINDOW);
     const texts = nodes.map(readMessage);
     const fresh: { text: string; el: Element }[] = [];
     for (let i = 0; i < texts.length; i++) {
