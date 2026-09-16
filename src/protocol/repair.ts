@@ -172,7 +172,7 @@ export function repairPromptFor(
     // and reported the sandbox failure as the task result
     const cmd = extractNarratedCommand(rawText) ?? extractNarratedCommand(fullPrompt) ?? prUrlToCommand(rawText) ?? prUrlToCommand(fullPrompt);
     const why =
-      "You ran that inside YOUR OWN sandbox - it has no gh, no credentials and no access to git.example.com, which is why it failed. The machine that executes emitted tool blocks HAS all of that.";
+      "You ran that inside YOUR OWN sandbox - it has no gh, no credentials and no access to the private Git host, which is why it failed. The machine that executes emitted tool blocks HAS all of that.";
     if (cmd) {
       const block = JSON.stringify({ id: "t1", name: "Bash", input: { command: cmd } });
       return (
