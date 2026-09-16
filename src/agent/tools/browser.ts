@@ -62,10 +62,10 @@ export const browserSnapshot: Tool = {
     const page = needPage();
     if (!page) return "[error] no page open - use BrowserNavigate first";
     try {
-      const sel = input.selector || "body";
+      const sel = JSON.stringify(input.selector || "body");
       return await page.evalValue<string>(
         `(() => {
-          const root = document.querySelector('${sel}') || document.body;
+          const root = document.querySelector(${sel}) || document.body;
           const lines = [];
           lines.push("=== TEXT ===");
           lines.push(root.innerText.slice(0, 5000));
@@ -97,14 +97,14 @@ export const browserClick: Tool = {
   run: async (input) => {
     const page = needPage();
     if (!page) return "[error] no page open - use BrowserNavigate first";
-    const safe = input.selector.replace(/'/g, "\\'");
+    const safe = JSON.stringify(input.selector);
     try {
       const result = await page.evalValue<string>(
         `(() => {
-          const el = document.querySelector('${safe}');
-          if (!el) return '[error] element not found: ${safe}';
+          const el = document.querySelector(${safe});
+          if (!el) return '[error] element not found: ' + ${safe};
           el.click();
-          return 'clicked: ${safe}';
+          return 'clicked: ' + ${safe};
         })()`
       );
       await new Promise((r) => setTimeout(r, 1000));
@@ -126,13 +126,13 @@ export const browserFill: Tool = {
   run: async (input) => {
     const page = needPage();
     if (!page) return "[error] no page open - use BrowserNavigate first";
-    const safe = input.selector.replace(/'/g, "\\'");
-    const val = JSON.stringify(input.value).replace(/'/g, "\\'");
+    const safe = JSON.stringify(input.selector);
+    const val = JSON.stringify(input.value);
     try {
       return await page.evalValue<string>(
         `(() => {
-          const el = document.querySelector('${safe}');
-          if (!el) return '[error] element not found: ${safe}';
+          const el = document.querySelector(${safe});
+          if (!el) return '[error] element not found: ' + ${safe};
           const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
           const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
           const setter = el.tagName === 'TEXTAREA' ? nativeTextAreaValueSetter : nativeInputValueSetter;
@@ -140,7 +140,7 @@ export const browserFill: Tool = {
           else el.value = ${val};
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
-          return 'filled: ${safe} with ${input.value.length} chars';
+          return 'filled: ' + ${safe} + ' with ' + ${input.value.length} + ' chars';
         })()`
       );
     } catch (e: any) {
