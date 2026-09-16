@@ -32,11 +32,6 @@ The web model has no tool API, so the gateway injects a small protocol that teac
 - git
 - Chrome / Chromium / Edge
 
-Claude Code is **optional** - `tablm` already is the CLI. Run it on ChatGPT:
-
-```bash
-tablm --model web-chatgpt "review this repo"
-```
 
 ## Quick start
 
@@ -58,6 +53,7 @@ tablm "fix the failing test"    # one-shot task
 tablm                           # interactive REPL (follow-ups share context)
 tablm claude                    # route Claude Code CLI through the gateway (optional)
 tablm codex                     # route codex CLI through the gateway (optional)
+tablm --model web-chatgpt "review this repo"
 ```
 
 Built-in tools: Bash, Read, Write, Edit, Grep, Glob, BrowserNavigate, BrowserSnapshot, BrowserClick, BrowserFill, BrowserScreenshot, BrowserEval.
