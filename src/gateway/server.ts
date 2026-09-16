@@ -95,13 +95,21 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
   const { site, session } = siteFromModel(body.model);
   const sessionKey = `${site}:${session ?? "default"}`;
   const built = buildPrompt(body, sessionKey);
-  const { prompt, mode } = built;
+  const { prompt, mode, firstTurn } = built;
   // Start a fresh web chat ONLY when none exists or the current one crossed
   // its rollover budget. Divergence (CLI compaction, resume, oversized delta)
   // re-syncs the SAME chat - conversations are kept alive as long as possible.
+  let promptText = prompt;
   const newChat = mode === "full" && (!built.hadConversation || built.rolloverDue);
+  if (built.firstTurn) {
+    // Flaky web models narrate instead of emitting tool calls on a fresh chat.
+    // A trivial protocol handshake primes them: one cheap round trip that ends
+    // with a REAL tool result, after which compliance is the learned pattern.
+    promptText += "\n\n[Protocol check - do this BEFORE the task] Output ONLY this block now:\n```tooluse\n{\"id\":\"t0\",\"name\":\"Bash\",\"input\":{\"command\":\"echo HANDSHAKE_OK\"}}\n```\nAfter the check result arrives you will continue with the task.";
+    console.log(`[gateway] ${site} protocol handshake injected (first turn)`);
+  }
   console.log(
-    `[gateway] ${site} prompt=${prompt.length} chars (${mode})${newChat ? " NEW-CHAT" : built.resync ? " re-sync" : ""}${built.rolloverDue ? " [rollover]" : ""}`
+    `[gateway] ${site} prompt=${promptText.length} chars (${mode})${newChat ? " NEW-CHAT" : built.resync ? " re-sync" : ""}${built.rolloverDue ? " [rollover]" : ""}`
   );
   const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
 
@@ -122,7 +130,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
         content: [],
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: estimateTokens(prompt), output_tokens: 0 },
+        usage: { input_tokens: estimateTokens(promptText), output_tokens: 0 },
       },
     });
     const ping = setInterval(() => {
@@ -204,7 +212,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
 
   // non-streaming
   try {
-    const result = await askWithRepair(site, prompt, { newChat, session, timeoutS: 240 }, hasTools);
+    const result = await askWithRepair(site, promptText, { newChat, session, timeoutS: 240 }, hasTools);
     const parsed = parseToolCalls(result.text || "");
     const usable = parsed.calls.filter((c) => c.unresolved.length === 0);
     const content: any[] = [];
@@ -221,7 +229,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
         content,
         stop_reason: usable.length ? "tool_use" : "end_turn",
         stop_sequence: null,
-        usage: { input_tokens: estimateTokens(prompt), output_tokens: estimateTokens(parsed.cleanText) },
+        usage: { input_tokens: estimateTokens(promptText), output_tokens: estimateTokens(parsed.cleanText) },
       })
     );
     console.log(`[gateway] ${site} ${result.status} ${parsed.cleanText.length} chars${usable.length ? ` tool_calls:${usable.length}` : ""}`);

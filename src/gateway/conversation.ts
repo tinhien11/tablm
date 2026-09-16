@@ -118,6 +118,8 @@ export interface BuiltPrompt {
   mode: "delta" | "full";
   /** a web conversation already exists for this key */
   hadConversation: boolean;
+  /** brand-new conversation with tools - protocol handshake should run */
+  firstTurn: boolean;
   /** the existing chat crossed the rollover threshold - start a new one */
   rolloverDue: boolean;
   /** history diverged from what the chat already contains - prefix a re-sync note */
@@ -157,11 +159,11 @@ export function buildPrompt(body: any, key: string): BuiltPrompt {
           const out = `[Tool use protocol]\n${toolProtocol(body.tools)}\n\n${text}`;
           conv.set(key, { sigs, protocolSent: true, pasted: prev.pasted + out.length });
           console.log(`[gateway] ${key} tool protocol injected (delta)`);
-          return { prompt: out, mode: "delta", hadConversation: true, rolloverDue: false, resync: false };
+          return { prompt: out, mode: "delta", hadConversation: true, rolloverDue: false, resync: false, firstTurn: false };
         }
         if (hasTools) text += toolReminder();
         conv.set(key, { sigs, protocolSent: prev.protocolSent, pasted: prev.pasted + text.length });
-        return { prompt: text, mode: "delta", hadConversation: true, rolloverDue: false, resync: false };
+        return { prompt: text, mode: "delta", hadConversation: true, rolloverDue: false, resync: false, firstTurn: false };
       }
     }
   }
@@ -179,7 +181,8 @@ export function buildPrompt(body: any, key: string): BuiltPrompt {
   }
   const state: ConvState = { sigs, protocolSent: hasTools, pasted: prompt.length };
   conv.set(key, state);
-  return { prompt, mode: "full", hadConversation, rolloverDue, resync };
+  const firstTurn = hasTools && !hadConversation;
+  return { prompt, mode: "full", hadConversation, rolloverDue, resync, firstTurn };
 }
 
 export function siteFromModel(model: string | undefined): { site: string; session?: string } {
