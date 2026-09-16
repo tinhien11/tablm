@@ -37,6 +37,7 @@ async function main() {
     console.log("  web-zai     chat.z.ai (GLM) - default");
     console.log("  web-chatgpt chatgpt.com");
     console.log("  web-kimi    kimi.ai (login required)");
+    console.log("  web-deepseek chat.deepseek.com");
     process.exit(0);
   }
 

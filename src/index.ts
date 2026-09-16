@@ -12,9 +12,9 @@ function errText(e: unknown): string {
 
 server.tool(
   "ask",
-  "Send a prompt to a web AI chat (chatgpt, kimi) in the user's Chrome and return its reply. Sessions are mapped automatically: repeated calls continue the same web conversation; pass new_chat=true to start a fresh one.",
+  "Send a prompt to a web AI chat (chatgpt, kimi, deepseek) in the user's Chrome and return its reply. Sessions are mapped automatically: repeated calls continue the same web conversation; pass new_chat=true to start a fresh one.",
   {
-    site: z.string().describe("site id: chatgpt | kimi"),
+    site: z.string().describe("site id: chatgpt | kimi | deepseek"),
     prompt: z.string().describe("the prompt to send"),
     new_chat: z
       .boolean()
@@ -80,7 +80,7 @@ server.tool(
   "inspect_dom",
   "Inspect the DOM of a web AI site tab to discover or fix selectors. Without a selector, dumps visible buttons and composer candidates.",
   {
-    site: z.string().describe("site id: chatgpt | kimi"),
+    site: z.string().describe("site id: chatgpt | kimi | deepseek"),
     selector: z.string().optional().describe("CSS selector to inspect specifically"),
   },
   async ({ site, selector }) => {
@@ -98,7 +98,7 @@ server.tool(
 server.tool(
   "screenshot",
   "Take a screenshot of a web AI site tab (useful to see login walls, captchas, or errors).",
-  { site: z.string().describe("site id: chatgpt | kimi") },
+  { site: z.string().describe("site id: chatgpt | kimi | deepseek") },
   async ({ site }) => {
     try {
       const data = await screenshotSite(site);

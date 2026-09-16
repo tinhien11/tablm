@@ -37,8 +37,13 @@ export const SITES: Record<string, SiteConfig> = {
     extSite: "chatgpt",
     label: "ChatGPT (chatgpt.com)",
     hosts: ["chatgpt.com", "chat.openai.com"],
-    // temporary chat: no server-side history retention, fewer UI surprises
-    newChatUrl: "https://chatgpt.com/?temporary-chat=true",
+    // temporary chat by default (clean state). NOTE: temp mode appears to
+    // harden the model against the text protocol ("not available in this
+    // chat") - set TABLM_CHATGPT_TEMPORARY=0 to use a regular new chat.
+    newChatUrl:
+      process.env.TABLM_CHATGPT_TEMPORARY === "0"
+        ? "https://chatgpt.com/"
+        : "https://chatgpt.com/?temporary-chat=true",
     conversationUrl: (id) => `https://chatgpt.com/c/${id}`,
     selectors: {
       composer: ["#prompt-textarea", 'div[contenteditable="true"]', "textarea"],
@@ -113,7 +118,29 @@ export const SITES: Record<string, SiteConfig> = {
     },
     defaults: { timeoutMs: 110_000, idleMs: 90_000 },
   },
-  zai: {
+deepseek: {
+id: "deepseek",
+extSite: "deepseek",
+label: "DeepSeek (chat.deepseek.com)",
+hosts: ["chat.deepseek.com"],
+newChatUrl: "https://chat.deepseek.com/",
+conversationUrl: (id) => `https://chat.deepseek.com/a/chat/s/${id}`,
+selectors: {
+composer: ['textarea[placeholder*="DeepSeek" i]', "textarea"],
+send: ['div[role="button"][class*="ds-button--primary"]:not([class*="disabled"])'],
+// during generation the send circle becomes a stop square; no stable
+// class yet, so generation detection leans on text stability below
+stop: ['div[role="button"][class*="stop"]'],
+generating: ['[aria-busy="true"]', '[class*="stop-icon"]'],
+assistant: [".ds-markdown"],
+assistantContent: [".ds-markdown"],
+turns: [".ds-message"],
+conversationIdPattern: "^/a/chat/s/([0-9a-f-]{8,})",
+stabilityMs: 1500,
+},
+defaults: { timeoutMs: 110_000, idleMs: 90_000 },
+},
+zai: {
     id: "zai",
     extSite: "glm",
     label: "Z.ai (chat.z.ai)",
