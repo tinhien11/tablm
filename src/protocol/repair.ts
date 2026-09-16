@@ -44,6 +44,8 @@ const NARRATION_PATTERNS = [
   /not (?:installed|connected) in this chat/i,
   /github connector is available/i,
   /I (?:couldn'?t|was unable to) (?:complete|post|run|finish)/i,
+  /^no response,? please try again later/i,
+  /SyntaxError: Unexpected token/i,
   /command not found|status 127|gh is not installed|no gh\b/i,
 ];
 

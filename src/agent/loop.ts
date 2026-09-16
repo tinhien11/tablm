@@ -56,6 +56,9 @@ const WAITING_FOR_USER = [
   /not (?:installed|connected) in this chat/i,
   /github connector is available/i,
   /I (?:couldn'?t|was unable to) (?:complete|post|run|finish)/i,
+  /^no response,? please try again later/i,
+  /SyntaxError: Unexpected token/i,
+  /is not valid JSON/i,
   /command not found|status 127|gh is not installed|its own sandbox/i,
   // Vietnamese
   /\bcho tôi biết\b/i,
