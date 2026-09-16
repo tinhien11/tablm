@@ -53,6 +53,19 @@ async function main() {
     args.splice(mIdx, 2);
   }
 
+  // model normalization + fail-fast: accept "web-chatgpt", "chatgpt",
+  // "chatgpt-web" (any order), but NEVER silently route an unknown id to the
+  // default site (that is how "chatgpt-web" ended up asking z.ai).
+  const { siteIds } = await import("./transport/driver.js");
+  const sites = siteIds();
+  const bare = model.replace(/^web-/, "").replace(/-web$/, "");
+  if (sites.includes(bare)) {
+    model = `web-${bare}`;
+  } else {
+    console.error(`unknown model "${model}" - valid: ${sites.map((s) => "web-" + s).join(", ")}`);
+    process.exit(1);
+  }
+
   let session: Session;
   let initialPrompt: string | undefined;
 

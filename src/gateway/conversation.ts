@@ -191,6 +191,7 @@ export function siteFromModel(model: string | undefined): { site: string; sessio
   const m = String(model ?? "");
   const match = /^web-([a-z0-9_-]+?)(?::([a-z0-9_-]+))?$/i.exec(m);
   if (match) return { site: match[1], session: match[2] };
+  console.log(`[gateway] unknown model "${m}" - falling back to default site`);
   return { site: process.env.TABLM_DEFAULT_SITE || "zai" };
 }
 
