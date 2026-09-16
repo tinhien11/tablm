@@ -5,6 +5,8 @@
 
 export interface ToolContext {
   cwd: string;
+  /** files successfully Read this session - Write requires this before overwrite */
+  readFiles?: Set<string>;
 }
 
 export interface Tool {

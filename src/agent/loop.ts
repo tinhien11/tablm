@@ -177,7 +177,7 @@ export async function runTurn(
   opts: LoopOpts = {}
 ): Promise<boolean> {
   const model = session.model || process.env.TABLM_MODEL || "web-zai";
-  const ctx: ToolContext = { cwd: session.cwd };
+  const ctx: ToolContext = { cwd: session.cwd, readFiles: new Set<string>() };
   // consecutive narration-nudges in this run - reset whenever tools execute
   let nudges = 0;
 
