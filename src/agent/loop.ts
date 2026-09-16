@@ -186,6 +186,12 @@ export async function runTurn(
   opts: LoopOpts = {}
 ): Promise<boolean> {
   const model = session.model || process.env.TABLM_MODEL || "web-zai";
+  // human-readable model label: "web-chatgpt" -> "web-chatgpt · ChatGPT (chatgpt.com)"
+  let modelLabel = model;
+  try {
+    const { resolveSite } = await import("../transport/driver.js");
+    modelLabel = `${model} · ${resolveSite(model.replace(/^web-/, "").split(":")[0]).label}`;
+  } catch {}
   const ctx: ToolContext = { cwd: session.cwd, readFiles: new Set<string>() };
   // consecutive narration-nudges in this run - reset whenever tools execute
   let nudges = 0;
@@ -255,7 +261,7 @@ export async function runTurn(
       }
     }
 
-    process.stderr.write(`\n--- turn ${turn + 1} [${model}] ---\n`);
+    process.stderr.write(`\n--- turn ${turn + 1} [${modelLabel}] ---\n`);
     let response: StreamResult;
     try {
       response = await callGateway(messages, true, model, session.id);

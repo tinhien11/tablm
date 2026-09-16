@@ -34,7 +34,10 @@ export function sessionsDir(): string {
 
 export function genSessionId(): string {
   const now = new Date();
-  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  // second + random suffix: two invocations in the same minute must NEVER
+  // share a session file (they used to collide on the minute-granular id)
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 export function logPath(id: string): string {
