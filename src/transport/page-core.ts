@@ -33,26 +33,34 @@ export async function pageTurn(cfg: any): Promise<TurnResult> {
   // the message container. Stripped so a header-only capture (response still
   // streaming) reads as EMPTY - the done-check then keeps waiting for real
   // content instead of ending the turn with 13 chars of UI chrome.
+  // Known chat-provider outage/error boxes. These must NEVER be captured as a
+  // model response - they read as empty so the poll keeps waiting (or times
+  // out into the CLI's empty-retry path) instead of ending the turn.
+  const OUTAGE = /chatgpt is temporarily|we'?re working to restore service|something went wrong|seems to have gone wrong|server had an error while processing|unable to load (conversation|site)/i;
   const stripUiArtifacts = (t: string): string =>
     t
       .replace(/^[ \t]*(?:#{1,6} )?(?:\*\*)?(?:ChatGPT|You|GLM|Z\.ai|Kimi|DeepSeek|Assistant) said:?(?:\*\*)?[ \t]*$/gim, "")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
   const readMessage = (el: Element): string => {
-    for (const s of S.assistantContent || []) {
-      const parts = all(s, el).filter(
-        (n: any, _i: number, arr: any[]) => !arr.some((o: any) => o !== n && o.contains(n))
-      );
-      if (parts.length) {
-        return stripUiArtifacts(
-          parts
-            .map((p: any) => p.innerText || "")
-            .join("\n")
-            .trim()
+    const extract = (): string => {
+      for (const s of S.assistantContent || []) {
+        const parts = all(s, el).filter(
+          (n: any, _i: number, arr: any[]) => !arr.some((o: any) => o !== n && o.contains(n))
         );
+        if (parts.length) {
+          return stripUiArtifacts(
+            parts
+              .map((p: any) => p.innerText || "")
+              .join("\n")
+              .trim()
+          );
+        }
       }
-    }
-    return stripUiArtifacts(((el as HTMLElement).innerText || el.textContent || "").trim());
+      return stripUiArtifacts(((el as HTMLElement).innerText || el.textContent || "").trim());
+    };
+    const text = extract();
+    return OUTAGE.test(text) ? "" : text; // outage box != a response
   };
   const composer = () => firstVisible(S.composer);
   const sendBtn = () => firstVisible(S.send);

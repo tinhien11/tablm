@@ -374,21 +374,12 @@ export async function askSite(
   }
   return withLock(key, async () => {
     await requireCdp();
-    const page = await ensurePage(site);
+    let page = await ensurePage(site);
     let convId = opts.conversationId;
     let reused = false;
     if (!convId && !opts.newChat) {
       convId = sessions[key] ?? null;
       reused = Boolean(convId);
-    }
-    if (convId) {
-      const target = site.conversationUrl(convId);
-      if (!(await page.url()).includes(convId)) {
-        await page.navigate(target);
-      }
-    } else {
-      await page.navigate(site.newChatUrl);
-      await waitForUrl(page, site.newChatUrl);
     }
     const timeoutMs = Math.max(10_000, (opts.timeoutS ?? site.defaults.timeoutMs / 1000) * 1000);
     const cfg = {
@@ -398,16 +389,40 @@ export async function askSite(
       selectors: site.selectors,
     };
     const expression = `(${pageTurn.toString()})(${JSON.stringify(cfg)})`;
-    let result: TurnResult;
-    try {
-      result = await page.evalValue<TurnResult>(expression);
-    } catch (e) {
-      if (e instanceof CdpError && /context|destroyed|navigat|closed|target/i.test(e.message)) {
+    const transportBlip = (e: unknown): boolean => {
+      // plain Error from chrome-remote-interface (NOT CdpError): "Inspected
+      // target navigated or closed" and friends - match on message only
+      const msg = e instanceof Error ? e.message : String(e);
+      return /context|destroyed|navigat|closed|target|websocket|session/i.test(msg);
+    };
+    // The whole page interaction is retryable: tabs navigate/close mid-turn
+    // (outage banners, retry clicks, redirects) and chrome-remote-interface
+    // surfaces that as plain errors from url()/navigate()/evalValue alike.
+    let result: TurnResult | null = null;
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 2 && !result; attempt++) {
+      try {
+        if (convId) {
+          const target = site.conversationUrl(convId);
+          if (!(await page.url()).includes(convId)) {
+            await page.navigate(target);
+          }
+        } else {
+          await page.navigate(site.newChatUrl);
+          await waitForUrl(page, site.newChatUrl);
+        }
         result = await page.evalValue<TurnResult>(expression);
-      } else {
-        throw e;
+      } catch (e) {
+        if (!transportBlip(e)) throw e;
+        lastErr = e;
+        console.log(`[driver] ${siteId} transport blip (attempt ${attempt + 1}): ${e instanceof Error ? e.message : String(e)} - re-attaching`);
+        pages.delete(page.targetId);
+        page.dispose();
+        await requireCdp();
+        page = await ensurePage(site);
       }
     }
+    if (!result) throw lastErr ?? new Error("turn failed after re-attach");
     if (result.status === "error" && reused && /composer not found/i.test(result.error ?? "")) {
       await page.navigate(site.newChatUrl);
       result = await page.evalValue<TurnResult>(expression);
