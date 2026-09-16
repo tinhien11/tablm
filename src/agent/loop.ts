@@ -180,6 +180,8 @@ export async function runTurn(
   const ctx: ToolContext = { cwd: session.cwd, readFiles: new Set<string>() };
   // consecutive narration-nudges in this run - reset whenever tools execute
   let nudges = 0;
+  // truncated/empty site responses - each retry continues the same stream
+  let truncRetries = 0;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     // pair-aware compaction happens BEFORE the call, on whole rounds
@@ -264,20 +266,32 @@ export async function runTurn(
     if (toolUses.length === 0) {
       const text = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
 
-      // EMPTY response = the site never answered (reasoning-model thinking
-      // past the idle window, or a dead turn) - not an answer. Retry once
-      // with a wake-up, then fail LOUDLY instead of silently ending.
+      // TRUNCATED response (site timeout cut the stream mid-sentence, e.g. "I")
+      // is not an answer either - stop_reason max_tokens tells us. Each retry
+      // continues from where the text stopped, so bounded retries converge.
+      const truncated = response.stop_reason === "max_tokens";
+      if (truncated && truncRetries < 3) {
+        truncRetries++;
+        process.stderr.write(
+          `\n[retry ${truncRetries}/3] response cut off by site timeout (${text.length} chars so far) - continuing from where it stopped\n`
+        );
+        messages.push({
+          role: "user",
+          content: `Your previous response was cut off by a site timeout after "${text.slice(-60)}". Continue EXACTLY where you stopped - emit the fenced tooluse block or finish the answer.`,
+        });
+        continue;
+      }
       if (!text.trim()) {
-        if (nudges < 1) {
-          nudges++;
-          process.stderr.write(`\n[retry] empty response from site - waking the model\n`);
+        if (truncRetries < 3) {
+          truncRetries++;
+          process.stderr.write(`\n[retry ${truncRetries}/3] empty response from site - waking the model\n`);
           messages.push({
             role: "user",
-            content: "Your previous response never arrived. Continue the task now - emit the ```tooluse block or the answer.",
+            content: "Your previous response never arrived. Continue the task now - emit the fenced tooluse block or the answer.",
           });
           continue;
         }
-        console.error("[stalled] site returned empty responses twice - giving up. Resume with: tablm --resume " + session.id);
+        console.error("[stalled] site returned empty responses repeatedly - giving up. Resume with: tablm --resume " + session.id);
         return false;
       }
 
@@ -305,6 +319,7 @@ export async function runTurn(
       return true;
     }
     nudges = 0; // the model is acting again
+    truncRetries = 0;
 
     // log the assistant text that accompanied the tool calls (derive renders
     // it as the text block of the same assistant message)

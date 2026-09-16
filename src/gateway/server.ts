@@ -137,7 +137,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
       result = await askWithRepair(
         site,
         prompt,
-        { newChat, session, timeoutS: 100 },
+        { newChat, session, timeoutS: 240 },
         hasTools
       );
     } catch (e) {
@@ -204,7 +204,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
 
   // non-streaming
   try {
-    const result = await askWithRepair(site, prompt, { newChat, session, timeoutS: 100 }, hasTools);
+    const result = await askWithRepair(site, prompt, { newChat, session, timeoutS: 240 }, hasTools);
     const parsed = parseToolCalls(result.text || "");
     const usable = parsed.calls.filter((c) => c.unresolved.length === 0);
     const content: any[] = [];
