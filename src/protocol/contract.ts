@@ -5,9 +5,49 @@
 // Bump PROTOCOL_VERSION whenever the wire format changes; the gateway tags
 // prompts so stale sessions degrade predictably instead of silently misparsing.
 
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 const FENCE = "```tooluse";
+
+/**
+ * UNIVERSAL head-of-context framing (all sites, English only). States the
+ * brain/robot split without any site-specific claims - site quirks belong in
+ * siteAdvisory() so fixing one chat UI can never regress another.
+ */
+export function agentPreamble(): string {
+  return [
+    "[Agent context]",
+    "You are the brain of a robot running on a DIFFERENT machine.",
+    "You cannot execute anything yourself: there is no shell, no filesystem and no network in this conversation.",
+    "The ONLY way to act on the real machine is to emit a fenced tooluse block.",
+    "The outer system parses that block, executes it on the real machine (which has all tools, credentials and network access), and returns the result to you as [tool_result].",
+  ].join("\n");
+}
+
+/**
+ * SITE-SPECIFIC advisories, keyed by site id. Each entry addresses a quirk of
+ * that one chat UI; sites without an entry must stay untouched. Regression
+ * rule: a warning learned on chatgpt must never leak into zai/kimi prompts.
+ */
+const SITE_ADVISORIES: Record<string, string[]> = {
+  chatgpt: [
+    "SITE-SPECIFIC WARNING (chatgpt): your built-in python/bash/code-interpreter sandbox CANNOT do this task - it has no gh, no credentials and no private network, so every command you run there fails with 'command not found' (verified in practice). Never use it, never mention it. The emitted tooluse blocks run on the real machine instead.",
+  ],
+};
+
+export function siteAdvisory(site: string): string {
+  const lines = SITE_ADVISORIES[site];
+  return lines ? lines.join("\n") : "";
+}
+
+/** Head-of-context: universal brain framing + the site's own advisory.
+ *  Callers place this at the VERY TOP of the pasted prompt. */
+export function contextHead(site = ""): string {
+  const advisory = siteAdvisory(site);
+  return advisory
+    ? agentPreamble() + "\n\n" + advisory
+    : agentPreamble();
+}
 
 export function toolProtocol(tools: any[]): string {
   const exampleTool = tools[0]?.name ?? "ToolName";

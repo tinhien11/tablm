@@ -94,7 +94,7 @@ async function askWithRepair(
 async function handleMessages(body: any, res: http.ServerResponse): Promise<void> {
   const { site, session } = siteFromModel(body.model);
   const sessionKey = `${site}:${session ?? "default"}`;
-  const built = buildPrompt(body, sessionKey);
+  const built = buildPrompt(body, sessionKey, site);
   const { prompt, mode, firstTurn } = built;
   // Start a fresh web chat ONLY when none exists or the current one crossed
   // its rollover budget. Divergence (CLI compaction, resume, oversized delta)

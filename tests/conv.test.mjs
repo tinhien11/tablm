@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 // conversation.ts keeps a module-level map keyed by the session key - each
 // test uses a unique key so state never leaks between tests.
 
-process.env.TABLM_CHAT_ROLLOVER_CHARS = "500"; // small for rollover tests
+process.env.TABLM_CHAT_ROLLOVER_CHARS = "2000"; // small for rollover tests
 const { buildPrompt } = await import("../dist/gateway/conversation.js");
 
 let pass = 0;
@@ -53,7 +53,7 @@ t("rollover: old chat past budget -> next request starts a fresh chat", () => {
   // the current request, so the turn that crosses the line still lands, and
   // the NEXT one gom (rolls over).
   buildPrompt(body(msgs("first message for rollover key")), "k4"); // pasted ~55
-  const big = "x".repeat(600);
+  const big = "x".repeat(2500);
   const r2 = buildPrompt(body(msgs("first message for rollover key", big)), "k4");
   assert.equal(r2.mode, "delta", "the crossing turn still lands in the same chat");
 
@@ -67,8 +67,8 @@ t("rollover: old chat past budget -> next request starts a fresh chat", () => {
   // diverged history after budget also rolls over (not a resync):
   // first cross the budget for k5, then diverge
   buildPrompt(body(msgs("seed for k5")), "k5");
-  buildPrompt(body(msgs("seed for k5", "y".repeat(600))), "k5"); // crosses budget
-  const r5 = buildPrompt(body(msgs("completely different", "y".repeat(600))), "k5");
+  buildPrompt(body(msgs("seed for k5", "y".repeat(2500))), "k5"); // crosses budget
+  const r5 = buildPrompt(body(msgs("completely different", "y".repeat(2500))), "k5");
   assert.equal(r5.mode, "full", "divergence after budget crossed = full");
   assert.equal(r5.rolloverDue, true, "...and it rolls over to a new chat");
   assert.equal(r5.resync, false);

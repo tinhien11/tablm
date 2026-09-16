@@ -6,7 +6,7 @@
 // process owns one conversation per site:session) and is keyed by message
 // signature, so identical history never re-pastes.
 
-import { toolProtocol, toolReminder } from "../protocol/contract.js";
+import { toolProtocol, toolReminder, contextHead } from "../protocol/contract.js";
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
@@ -54,8 +54,10 @@ function formatMessages(msgs: any[]): string {
     .join("\n\n");
 }
 
-export function buildFullPrompt(body: any): string {
+export function buildFullPrompt(body: any, site = ""): string {
+  const head = contextHead(site);
   const parts: string[] = [];
+  if (head) parts.push(head);
   const sys = body.system;
   let sysLen = 0;
   if (sys) {
@@ -133,7 +135,7 @@ export interface BuiltPrompt {
  * and the prompt is marked as a re-sync - a new chat is started only for a
  * brand-new conversation or when the current one crosses the rollover budget.
  */
-export function buildPrompt(body: any, key: string): BuiltPrompt {
+export function buildPrompt(body: any, key: string, site = ""): BuiltPrompt {
   const msgs: any[] = body.messages ?? [];
   const sigs = msgs.map(msgSig);
   const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
@@ -156,7 +158,7 @@ export function buildPrompt(body: any, key: string): BuiltPrompt {
         prev.pasted <= rolloverChars()
       ) {
         if (hasTools && !prev.protocolSent) {
-          const out = `[Tool use protocol]\n${toolProtocol(body.tools)}\n\n${text}`;
+          const out = `${contextHead(site)}\n\n[Tool use protocol]\n${toolProtocol(body.tools)}\n\n${text}`;
           conv.set(key, { sigs, protocolSent: true, pasted: prev.pasted + out.length });
           console.log(`[gateway] ${key} tool protocol injected (delta)`);
           return { prompt: out, mode: "delta", hadConversation: true, rolloverDue: false, resync: false, firstTurn: false };
@@ -170,7 +172,7 @@ export function buildPrompt(body: any, key: string): BuiltPrompt {
 
   const hadConversation = prev !== undefined;
   const rolloverDue = hadConversation && prev!.pasted > rolloverChars();
-  let prompt = buildFullPrompt(body);
+  let prompt = buildFullPrompt(body, site);
   // diverged but the chat is young enough: keep it and mark the paste as a
   // re-sync so the model treats it as the current state, not duplication
   const resync = hadConversation && !rolloverDue;
