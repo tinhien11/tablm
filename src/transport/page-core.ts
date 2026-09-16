@@ -29,19 +29,30 @@ export async function pageTurn(cfg: any): Promise<TurnResult> {
     return null;
   };
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // Chat UIs inject accessibility headers ("ChatGPT said:", "You said:") into
+  // the message container. Stripped so a header-only capture (response still
+  // streaming) reads as EMPTY - the done-check then keeps waiting for real
+  // content instead of ending the turn with 13 chars of UI chrome.
+  const stripUiArtifacts = (t: string): string =>
+    t
+      .replace(/^[ \t]*(?:#{1,6} )?(?:\*\*)?(?:ChatGPT|You|GLM|Z\.ai|Kimi|DeepSeek|Assistant) said:?(?:\*\*)?[ \t]*$/gim, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
   const readMessage = (el: Element): string => {
     for (const s of S.assistantContent || []) {
       const parts = all(s, el).filter(
         (n: any, _i: number, arr: any[]) => !arr.some((o: any) => o !== n && o.contains(n))
       );
       if (parts.length) {
-        return parts
-          .map((p: any) => p.innerText || "")
-          .join("\n")
-          .trim();
+        return stripUiArtifacts(
+          parts
+            .map((p: any) => p.innerText || "")
+            .join("\n")
+            .trim()
+        );
       }
     }
-    return ((el as HTMLElement).innerText || el.textContent || "").trim();
+    return stripUiArtifacts(((el as HTMLElement).innerText || el.textContent || "").trim());
   };
   const composer = () => firstVisible(S.composer);
   const sendBtn = () => firstVisible(S.send);
