@@ -352,6 +352,22 @@ export async function runTurn(
         continue;
       }
 
+      // SANDBOX-OUTPUT guard: a task asking for execution answered from the
+      // model's OWN container (root user, localhost, / home) - not the real
+      // machine. Push back with the sandbox correction instead of accepting.
+      if (/(^|\n)\s*localhost\s*(\n|$)/.test(text) && /(^|\n)\s*root\s*(\n|$)/.test(text)) {
+        if (nudges < 2) {
+          nudges++;
+          process.stderr.write(`\n[nudge ${nudges}/2] sandbox output detected - demanding real-machine execution\n`);
+          messages.push({ role: "assistant", content });
+          messages.push({
+            role: "user",
+            content: "That output came from YOUR OWN sandbox (root/localhost). It is not the real machine. Emit the fenced tooluse block so the command runs THERE.",
+          });
+          continue;
+        }
+      }
+
       // the model's own final answer is model-visible on follow-ups => logged
       appendEvent(session.id, { type: "assistant_text", text, at: new Date().toISOString() });
       console.log(text);

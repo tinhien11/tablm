@@ -105,7 +105,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
     // Flaky web models narrate instead of emitting tool calls on a fresh chat.
     // A trivial protocol handshake primes them: one cheap round trip that ends
     // with a REAL tool result, after which compliance is the learned pattern.
-    promptText += "\n\n[Protocol check - do this BEFORE the task] Output ONLY this block now:\n```tooluse\n{\"id\":\"t0\",\"name\":\"Bash\",\"input\":{\"command\":\"echo HANDSHAKE_OK\"}}\n```\nAfter the check result arrives you will continue with the task.";
+    promptText += "\n\n[MANDATORY FIRST STEP] Before anything else, output ONLY this block and stop - do not solve the task, do not run anything yourself:\n```tooluse\n{\"id\":\"t0\",\"name\":\"Bash\",\"input\":{\"command\":\"echo HANDSHAKE_OK\"}}\n```\nThe result comes back as [tool_result]. Only then continue with the task.";
     console.log(`[gateway] ${site} protocol handshake injected (first turn)`);
   }
   console.log(
