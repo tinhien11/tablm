@@ -263,6 +263,24 @@ export async function runTurn(
 
     if (toolUses.length === 0) {
       const text = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+
+      // EMPTY response = the site never answered (reasoning-model thinking
+      // past the idle window, or a dead turn) - not an answer. Retry once
+      // with a wake-up, then fail LOUDLY instead of silently ending.
+      if (!text.trim()) {
+        if (nudges < 1) {
+          nudges++;
+          process.stderr.write(`\n[retry] empty response from site - waking the model\n`);
+          messages.push({
+            role: "user",
+            content: "Your previous response never arrived. Continue the task now - emit the ```tooluse block or the answer.",
+          });
+          continue;
+        }
+        console.error("[stalled] site returned empty responses twice - giving up. Resume with: tablm --resume " + session.id);
+        return false;
+      }
+
       // Planning prose OR permission-asking ("just let me know", "shall I...")
       // is a stall, not a final answer - push back regardless of whether the
       // task has started. Bounded: after 2 nudges accept the text.

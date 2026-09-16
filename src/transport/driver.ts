@@ -57,7 +57,9 @@ export const SITES: Record<string, SiteConfig> = {
       conversationIdPattern: "^/(?:c|uc)/([0-9a-f-]{8,})",
       stabilityMs: 1200,
     },
-    defaults: { timeoutMs: 110_000, idleMs: 90_000 },
+    // 150s idle: ChatGPT reasoning models can think silently for minutes and
+    // the thinking UI may not match the generating selectors above
+    defaults: { timeoutMs: 180_000, idleMs: 150_000 },
   },
   kimi: {
     id: "kimi",
