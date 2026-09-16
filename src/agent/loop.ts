@@ -64,7 +64,7 @@ const WAITING_FOR_USER = [
 ];
 
 /** Explicit completion markers - never nudge these, the task IS done. */
-const COMPLETION = /\bDONE\b|task complete|hoàn thành|completed successfully/i;
+const COMPLETION = /\bDONE\b|task complete|hoàn thành|completed successfully|no further action|review is complete|already (?:posted|reviewed|verified)|was (?:posted|verified) (?:as|and)/i;
 
 function isPlanning(text: string): boolean {
   return !COMPLETION.test(text) && PLANNING.some((re) => re.test(text));
@@ -188,6 +188,7 @@ export async function runTurn(
   let nudges = 0;
   // truncated/empty site responses - each retry continues the same stream
   let truncRetries = 0;
+  const executed = new Set<string>(); // narrated commands already materialized this run
   // narrated read-only commands materialized by the harness (chatgpt habit)
   let autoexecs = 0;
 
@@ -332,7 +333,9 @@ export async function runTurn(
       const narrated = text
         ? extractNarratedCommand(text) ?? prUrlToCommand(text) ?? prUrlToCommand(taskStr)
         : null;
-      if (narrated && isSafeAutoexecCommand(narrated) && autoexecs < 5) {
+      // completion summaries that mention commands are NEVER autoexec material
+      if (!COMPLETION.test(text) && narrated && !executed.has(narrated) && isSafeAutoexecCommand(narrated) && autoexecs < 5) {
+        executed.add(narrated);
         autoexecs++;
         process.stderr.write(`\n[autoexec ${autoexecs}] narrated command materialized: ${narrated.slice(0, 100)}\n`);
         const tool = toolMap.get("Bash")!;
