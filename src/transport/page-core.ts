@@ -40,6 +40,8 @@ export async function pageTurn(cfg: any): Promise<TurnResult> {
   const stripUiArtifacts = (t: string): string =>
     t
       .replace(/^[ \t]*(?:#{1,6} )?(?:\*\*)?(?:ChatGPT|You|GLM|Z\.ai|Kimi|DeepSeek|Assistant) said:?(?:\*\*)?[ \t]*$/gim, "")
+      // code-block header buttons rendered inside the message container
+      .replace(/^[ \t]*(?:Copy|Download|Regenerate|Share|Edit)[ \t]*$/gim, "")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
   const readMessage = (el: Element): string => {

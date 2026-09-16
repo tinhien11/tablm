@@ -138,7 +138,9 @@ assistant: [".ds-markdown"],
 assistantContent: [".ds-markdown"],
 turns: [".ds-message"],
 conversationIdPattern: "^/a/chat/s/([0-9a-f-]{8,})",
-stabilityMs: 1500,
+// deepseek has no reliable generating selector; stability is the only
+// done-signal, and streams pause > 1.5s mid-generation all the time
+stabilityMs: 3000,
 },
 defaults: { timeoutMs: 110_000, idleMs: 90_000 },
 },
