@@ -37,13 +37,15 @@ export const SITES: Record<string, SiteConfig> = {
     extSite: "chatgpt",
     label: "ChatGPT (chatgpt.com)",
     hosts: ["chatgpt.com", "chat.openai.com"],
-    // temporary chat by default (clean state). NOTE: temp mode appears to
-    // harden the model against the text protocol ("not available in this
-    // chat") - set TABLM_CHATGPT_TEMPORARY=0 to use a regular new chat.
+    // Regular new chat by default: conversations persist, survive tab
+    // navigations, and are visible in the ChatGPT sidebar. Opt in to
+    // temporary chats with TABLM_CHATGPT_TEMPORARY=1 (disposable, but they
+    // vanish on any navigation and appear to harden the model against the
+    // text protocol).
     newChatUrl:
-      process.env.TABLM_CHATGPT_TEMPORARY === "0"
-        ? "https://chatgpt.com/"
-        : "https://chatgpt.com/?temporary-chat=true",
+      process.env.TABLM_CHATGPT_TEMPORARY === "1"
+        ? "https://chatgpt.com/?temporary-chat=true"
+        : "https://chatgpt.com/",
     conversationUrl: (id) => `https://chatgpt.com/c/${id}`,
     selectors: {
       composer: ["#prompt-textarea", 'div[contenteditable="true"]', "textarea"],
