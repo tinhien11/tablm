@@ -40,6 +40,7 @@ const NARRATION_PATTERNS = [
   /\b(?:restoring|recovering) via heredoc instead/i,
   /\bthe payload didn'?t attach/i,
   /\bI can['’']t|cannot |unable to |Work mode|Cloud Browser\b/i,
+  /I (?:couldn'?t|was unable to) (?:complete|post|run|finish)/i,
 ];
 
 function classifyNarrated(text: string): boolean {
@@ -118,14 +119,19 @@ export async function repairTruncatedJson(
  * ran. Reflecting it back as a ready-to-emit block converts a stall into one
  * round trip: the model no longer has to invent the tool call format.
  */
+const NEGATION = /\b(not installed|command not found|does not resolve|no (credentials|access)|cannot be found|unavailable)\b/i;
+
 export function extractNarratedCommand(text: string): string | null {
   const cleaned = text.replace(/```[a-z]*\n?/gi, "");
   const re = /^\s*(?:[$>]+\s*)?((?:[A-Z_]+=\S+\s+)?(?:gh|git|npm|npx|node|python3?|curl|cat|ls|find|rg|sed|awk|head|tail|grep|echo|make|docker|kubectl|wc)\b.*)$/gim;
-  const m = re.exec(cleaned);
-  if (!m) return null;
-  const cmd = m[1].trim();
-  if (cmd.length < 3 || cmd.length > 300) return null;
-  return cmd;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cleaned)) !== null) {
+    const cmd = m[1].trim();
+    // skip prose-negation lines like "gh is not installed (gh: command not found)"
+    if (NEGATION.test(cmd) || cmd.length < 3 || cmd.length > 300) continue;
+    return cmd;
+  }
+  return null;
 }
 
 export function repairPromptFor(
@@ -140,7 +146,7 @@ export function repairPromptFor(
     return `${fullPrompt}\n\n${payloadMissingCorrection(b.id || "1", key, b.name)}`;
   }
   if (kind === "narrated") {
-    const cmd = extractNarratedCommand(rawText);
+    const cmd = extractNarratedCommand(rawText) ?? extractNarratedCommand(fullPrompt);
     if (cmd) {
       const block = JSON.stringify({ id: "t1", name: "Bash", input: { command: cmd } });
       return (
