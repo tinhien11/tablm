@@ -113,11 +113,43 @@ export async function repairTruncatedJson(
   return null;
 }
 
-export function repairPromptFor(kind: TurnKind, blocked: ParsedCall[], fullPrompt: string): string {
+/**
+ * Mine the narrated text for the shell command the model DESCRIBED but never
+ * ran. Reflecting it back as a ready-to-emit block converts a stall into one
+ * round trip: the model no longer has to invent the tool call format.
+ */
+export function extractNarratedCommand(text: string): string | null {
+  const cleaned = text.replace(/```[a-z]*\n?/gi, "");
+  const re = /^\s*(?:[$>]+\s*)?((?:[A-Z_]+=\S+\s+)?(?:gh|git|npm|npx|node|python3?|curl|cat|ls|find|rg|sed|awk|head|tail|grep|echo|make|docker|kubectl|wc)\b.*)$/gim;
+  const m = re.exec(cleaned);
+  if (!m) return null;
+  const cmd = m[1].trim();
+  if (cmd.length < 3 || cmd.length > 300) return null;
+  return cmd;
+}
+
+export function repairPromptFor(
+  kind: TurnKind,
+  blocked: ParsedCall[],
+  fullPrompt: string,
+  rawText = ""
+): string {
   if (kind === "narrated" && blocked.length) {
     const b = blocked[0];
     const key = b.unresolved[0];
     return `${fullPrompt}\n\n${payloadMissingCorrection(b.id || "1", key, b.name)}`;
   }
+  if (kind === "narrated") {
+    const cmd = extractNarratedCommand(rawText);
+    if (cmd) {
+      const block = JSON.stringify({ id: "t1", name: "Bash", input: { command: cmd } });
+      return (
+        `${fullPrompt}\n\n[System correction] You wrote that \`${cmd}\` returned a result. It did NOT run - no tool call was emitted, so nothing executed. ` +
+        `Also: gh, git and npm are preinstalled on this machine - never install packages. ` +
+        `To actually run your command, emit EXACTLY this block and nothing else:\n\`\`\`tooluse\n${block}\n\`\`\``
+      );
+    }
+  }
   return `${fullPrompt}\n\n${narrationCorrection()}`;
 }
+

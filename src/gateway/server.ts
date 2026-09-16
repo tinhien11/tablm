@@ -77,7 +77,7 @@ async function askWithRepair(
 
     // narrated / refused: correct once and let the model redo the turn
     console.log(`[gateway] ${site} outcome=${outcome.kind} - correcting (round ${round + 1})`);
-    const correction = repairPromptFor(outcome.kind, outcome.blocked, prompt);
+    const correction = repairPromptFor(outcome.kind, outcome.blocked, prompt, result.text);
     const retry = await askSite(site, correction, { ...opts, newChat: false });
     if (retry.text && retry.status === "done") {
       const reparsed = parseToolCalls(retry.text);
