@@ -14,7 +14,7 @@ import { groupRounds, planCompaction, totalChars } from "./rounds.js";
 import { toolMap } from "./tools/registry.js";
 import type { ToolContext } from "./tools/index.js";
 import { parseToolCalls } from "../protocol/parse.js";
-import { extractNarratedCommand, isSafeAutoexecCommand } from "../protocol/repair.js";
+import { extractNarratedCommand, isSafeAutoexecCommand, prUrlToCommand } from "../protocol/repair.js";
 
 const GATEWAY = process.env.TABLM_GATEWAY_URL || "http://127.0.0.1:8788";
 const AUTH_TOKEN = process.env.TABLM_AUTH_TOKEN || "tablm";
@@ -52,6 +52,9 @@ const WAITING_FOR_USER = [
   /\bawaiting (your|further|the author's)? ?(confirmation|instructions|approval|input)\b/i,
   /once (the author|you) confirms?/i,
   /no further action is pending/i,
+  /don['’']t have (?:an? )?(?:executable |bash |gh |tool)/i,
+  /not (?:installed|connected) in this chat/i,
+  /github connector is available/i,
   /I (?:couldn'?t|was unable to) (?:complete|post|run|finish)/i,
   /command not found|status 127|gh is not installed|its own sandbox/i,
   // Vietnamese
@@ -322,7 +325,13 @@ export async function runTurn(
       // command instead of emitting a block (chatgpt habit). For safe read-only
       // commands we run it ourselves and feed the real result back - progress
       // instead of a stall. State-changing commands still require real blocks.
-      const narrated = text ? extractNarratedCommand(text) : null;
+      // task contains a PR URL and the model refuses to run gh? construct the
+      // command ourselves - this is the recurring PR-review workflow
+      const taskText = messages.find((m) => m.role === "user")?.content;
+      const taskStr = typeof taskText === "string" ? taskText : "";
+      const narrated = text
+        ? extractNarratedCommand(text) ?? prUrlToCommand(text) ?? prUrlToCommand(taskStr)
+        : null;
       if (narrated && isSafeAutoexecCommand(narrated) && autoexecs < 5) {
         autoexecs++;
         process.stderr.write(`\n[autoexec ${autoexecs}] narrated command materialized: ${narrated.slice(0, 100)}\n`);

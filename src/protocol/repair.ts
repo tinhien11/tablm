@@ -40,6 +40,9 @@ const NARRATION_PATTERNS = [
   /\b(?:restoring|recovering) via heredoc instead/i,
   /\bthe payload didn'?t attach/i,
   /\bI can['’']t|cannot |unable to |Work mode|Cloud Browser\b/i,
+  /don['’']t have (?:an? )?(?:executable |bash |gh |tool)/i,
+  /not (?:installed|connected) in this chat/i,
+  /github connector is available/i,
   /I (?:couldn'?t|was unable to) (?:complete|post|run|finish)/i,
   /command not found|status 127|gh is not installed|no gh\b/i,
 ];
@@ -133,6 +136,13 @@ export function isSafeAutoexecCommand(cmd: string): boolean {
   return AUTOEXEC_ALLOW.test(c);
 }
 
+/** Construct a gh command from a GitHub PR URL (host, owner/repo, number). */
+export function prUrlToCommand(url: string): string | null {
+  const m = /https?:\/\/([^\/\s]+)\/([^\/\s]+)\/([^\/\s]+)\/pull\/(\d+)/.exec(url);
+  if (!m) return null;
+  return `GH_HOST=${m[1]} gh pr view ${m[4]} --repo ${m[2]}/${m[3]}`;
+}
+
 export function extractNarratedCommand(text: string): string | null {
   const cleaned = text.replace(/```[a-z]*\n?/gi, "");
   const re = /^\s*(?:[$>]+\s*)?((?:[A-Z_]+=\S+\s+)?(?:gh|git|npm|npx|node|python3?|curl|cat|ls|find|rg|sed|awk|head|tail|grep|echo|make|docker|kubectl|wc)\b.*)$/gim;
@@ -160,7 +170,7 @@ export function repairPromptFor(
   if (kind === "narrated" && /command not found|status 127|gh is not installed|cannot be resolved/i.test(rawText)) {
     // the model ran the command in its OWN sandbox (no gh, no private network)
     // and reported the sandbox failure as the task result
-    const cmd = extractNarratedCommand(rawText) ?? extractNarratedCommand(fullPrompt);
+    const cmd = extractNarratedCommand(rawText) ?? extractNarratedCommand(fullPrompt) ?? prUrlToCommand(rawText) ?? prUrlToCommand(fullPrompt);
     const why =
       "You ran that inside YOUR OWN sandbox - it has no gh, no credentials and no access to git.example.com, which is why it failed. The machine that executes emitted tool blocks HAS all of that.";
     if (cmd) {
