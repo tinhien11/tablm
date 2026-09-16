@@ -52,6 +52,7 @@ const WAITING_FOR_USER = [
   /once (the author|you) confirms?/i,
   /no further action is pending/i,
   /I (?:couldn'?t|was unable to) (?:complete|post|run|finish)/i,
+  /command not found|status 127|gh is not installed|its own sandbox/i,
   // Vietnamese
   /\bcho tôi biết\b/i,
   /\bnếu (bạn|cần) (muốn|xác nhận|thì)\b/i,

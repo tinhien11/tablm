@@ -41,6 +41,7 @@ const NARRATION_PATTERNS = [
   /\bthe payload didn'?t attach/i,
   /\bI can['’']t|cannot |unable to |Work mode|Cloud Browser\b/i,
   /I (?:couldn'?t|was unable to) (?:complete|post|run|finish)/i,
+  /command not found|status 127|gh is not installed|no gh\b/i,
 ];
 
 function classifyNarrated(text: string): boolean {
@@ -145,16 +146,20 @@ export function repairPromptFor(
     const key = b.unresolved[0];
     return `${fullPrompt}\n\n${payloadMissingCorrection(b.id || "1", key, b.name)}`;
   }
-  if (kind === "narrated") {
+  if (kind === "narrated" && /command not found|status 127|gh is not installed|cannot be resolved/i.test(rawText)) {
+    // the model ran the command in its OWN sandbox (no gh, no private network)
+    // and reported the sandbox failure as the task result
     const cmd = extractNarratedCommand(rawText) ?? extractNarratedCommand(fullPrompt);
+    const why =
+      "You ran that inside YOUR OWN sandbox - it has no gh, no credentials and no access to git.example.com, which is why it failed. The machine that executes emitted tool blocks HAS all of that.";
     if (cmd) {
       const block = JSON.stringify({ id: "t1", name: "Bash", input: { command: cmd } });
       return (
-        `${fullPrompt}\n\n[System correction] You wrote that \`${cmd}\` returned a result. It did NOT run - no tool call was emitted, so nothing executed. ` +
-        `Also: gh, git and npm are preinstalled on this machine - never install packages. ` +
-        `To actually run your command, emit EXACTLY this block and nothing else:\n\`\`\`tooluse\n${block}\n\`\`\``
+        `${fullPrompt}\n\n[System correction] ${why} ` +
+        `Re-emit the command as a block so it runs THERE:\n\`\`\`tooluse\n${block}\n\`\`\``
       );
     }
+    return `${fullPrompt}\n\n[System correction] ${why} Emit the fenced tooluse block for the next command.`;
   }
   return `${fullPrompt}\n\n${narrationCorrection()}`;
 }

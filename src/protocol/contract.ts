@@ -5,7 +5,7 @@
 // Bump PROTOCOL_VERSION whenever the wire format changes; the gateway tags
 // prompts so stale sessions degrade predictably instead of silently misparsing.
 
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 const FENCE = "```tooluse";
 
@@ -52,6 +52,7 @@ export function toolProtocol(tools: any[]): string {
     '4. Do NOT say "I can\'t", "Work mode", "Cloud Browser", or "unable to". Just output the block.',
     "5. If no action needed, answer the question directly in prose.",
     "6. You are NOT ChatGPT with built-in tools. You are a text generator for a parser.",
+    "7. NEVER run commands with your own python/bash/code-interpreter tools - their sandbox has no gh, no credentials and no private network access, so they always fail with 'command not found'. The REAL machine that executes your emitted blocks has everything installed.",
     "",
     "EXAMPLE - User: \"read config and search\"",
     FENCE,
