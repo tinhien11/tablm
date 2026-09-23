@@ -10,6 +10,7 @@
 // are reported to the model as a tool_result so it can re-emit them correctly.
 
 import { appendEvent, type Session } from "./log.js";
+import { writeFileSync } from "node:fs";
 import { groupRounds, planCompaction, totalChars } from "./rounds.js";
 import { toolMap } from "./tools/registry.js";
 import type { ToolContext } from "./tools/index.js";
@@ -201,6 +202,7 @@ export async function runTurn(
   // truncated/empty site responses - each retry continues the same stream
   let truncRetries = 0;
   const executed = new Set<string>(); // narrated commands already materialized this run
+  let emptyStreak = 0; // consecutive 0-char site responses
   // narrated read-only commands materialized by the harness (chatgpt habit)
   let autoexecs = 0;
 
@@ -291,6 +293,14 @@ export async function runTurn(
       // is not an answer either - stop_reason max_tokens tells us. Each retry
       // continues from where the text stopped, so bounded retries converge.
       const truncated = response.stop_reason === "max_tokens";
+      if (!text.trim()) emptyStreak++;
+      else emptyStreak = 0;
+      // two void continuations in a row = the site cannot generate for this
+      // conversation right now - stop burning 240s rounds on it
+      if (truncated && emptyStreak >= 2) {
+        console.error(`[stalled] site returned ${emptyStreak} empty responses - giving up. Resume with: tablm --resume ${session.id}`);
+        return false;
+      }
       if (truncated && truncRetries < 3) {
         truncRetries++;
         const big = text.length > 8000;
@@ -380,6 +390,14 @@ export async function runTurn(
         }
       }
 
+      // never lose big partial output: auto-save before accepting as final
+      if (text.length > 4000) {
+        const partialPath = `/tmp/tablm-partial-${session.id}.md`;
+        try {
+          writeFileSync(partialPath, text);
+          console.error(`[partial] ${text.length} chars auto-saved to ${partialPath}`);
+        } catch {}
+      }
       // the model's own final answer is model-visible on follow-ups => logged
       appendEvent(session.id, { type: "assistant_text", text, at: new Date().toISOString() });
       console.log(text);
