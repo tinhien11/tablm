@@ -74,7 +74,10 @@ function isPlanning(text: string): boolean {
 }
 
 function isWaitingForUser(text: string): boolean {
-  return !COMPLETION.test(text) && WAITING_FOR_USER.some((re) => re.test(text));
+  // waiting beats completion: "No further action is pending... just let me
+  // know" matches both marker classes, and a model offering to act once
+  // confirmed is WAITING, not done.
+  return WAITING_FOR_USER.some((re) => re.test(text));
 }
 
 interface StreamResult {
@@ -290,12 +293,15 @@ export async function runTurn(
       const truncated = response.stop_reason === "max_tokens";
       if (truncated && truncRetries < 3) {
         truncRetries++;
+        const big = text.length > 8000;
         process.stderr.write(
-          `\n[retry ${truncRetries}/3] response cut off by site timeout (${text.length} chars so far) - continuing from where it stopped\n`
+          `\n[retry ${truncRetries}/3] response cut off by site timeout (${text.length} chars so far) - ${big ? "redirecting to file delivery" : "continuing from where it stopped"}\n`
         );
         messages.push({
           role: "user",
-          content: `Your previous response was cut off by a site timeout after "${text.slice(-60)}". Continue EXACTLY where you stopped - emit the fenced tooluse block or finish the answer.`,
+          content: big
+            ? `Your response was cut off at ${text.length} chars - chat prose this long will always be cut. Do NOT continue in chat. Instead, save the FULL document (re-include what you already wrote) into a file using fenced tooluse Write blocks with @payload content, ~3000 chars per chunk (multiple chunks are fine), then reply with only the file path and a 3-line summary.`
+            : `Your previous response was cut off by a site timeout after "${text.slice(-60)}". Continue EXACTLY where you stopped - emit the fenced tooluse block or finish the answer.`,
         });
         continue;
       }

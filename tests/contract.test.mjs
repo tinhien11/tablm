@@ -48,7 +48,7 @@ t("v8: PROOF receipt + transcription reframe still present", () => {
 t("receipt in protocol does not leak @TBF@ garbage; version is v8", () => {
   const p = toolProtocol([{ name: "Bash" }]);
   assert.ok(p.includes("v" + PROTOCOL_VERSION));
-  assert.equal(PROTOCOL_VERSION, 8);
+  assert.equal(PROTOCOL_VERSION, 9);
 });
 
 console.log(`\n${fail.length === 0 ? "ALL PASS" : `${fail.length} FAILED`} (${pass} passed)`);
