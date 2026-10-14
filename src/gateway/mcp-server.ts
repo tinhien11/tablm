@@ -23,9 +23,19 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32700, message: "invalid JSON" } }));
       return;
     }
-    const path = (req.url ?? "").split("?")[0];
+    let path = (req.url ?? "").split("?")[0];
+    // ChatGPT connectors only support OAuth or No-auth (no custom headers).
+    // Token-in-path lets "No authentication" clients stay token-gated:
+    //   /mcp/<token>  -> authorized, routed as /mcp
+    let pathToken: string | null = null;
+    const pm = /^\/mcp\/([0-9a-f]{8,64})$/.exec(path);
+    if (pm) {
+      path = "/mcp";
+      pathToken = pm[1];
+    }
+    const authorized = mcpAuthorized(req.headers) || (pathToken !== null && pathToken === MCP_TOKEN);
     if (req.method === "POST" && (path === "/mcp" || path === "/")) {
-      if (!mcpAuthorized(req.headers)) {
+      if (!authorized) {
         res.writeHead(401, { "content-type": "application/json" });
         res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message: "unauthorized" } }));
         return;
