@@ -8,6 +8,7 @@ import http from "node:http";
 import { askSite } from "../transport/driver.js";
 import { SITES } from "../transport/driver.js";
 import { startBridge, submitJob, bridgeConnected } from "../transport/bridge.js";
+import { handleMcpMessage, mcpAuthorized } from "./mcp.js";
 import { parseToolCalls } from "../protocol/parse.js";
 import {
   classify,
@@ -290,6 +291,33 @@ export function createServer(): http.Server {
         }
         return;
       }
+      if (req.method === "POST" && path === "/mcp") {
+        if (!mcpAuthorized(req.headers)) {
+          res.writeHead(401, { "content-type": "application/json" });
+          res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message: "unauthorized - set TABLM_MCP_TOKEN and send Authorization: Bearer <token>" } }));
+          return;
+        }
+        handleMcpMessage(body)
+          .then((rpcRes) => {
+            if (rpcRes === null) {
+              res.writeHead(202);
+              res.end();
+            } else {
+              res.writeHead(200, { "content-type": "application/json" });
+              res.end(JSON.stringify(rpcRes));
+            }
+          })
+          .catch((e) => {
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ jsonrpc: "2.0", id: body?.id ?? null, error: { code: -32603, message: String(e?.message ?? e) } }));
+          });
+        return;
+      }
+      if (req.method === "GET" && path === "/mcp") {
+        res.writeHead(405, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "SSE not supported - POST JSON-RPC messages" } }));
+        return;
+      }
       if (req.method === "POST" && path === "/ext/rpc") {
         const job = {
           site: body.site,
@@ -330,4 +358,5 @@ startBridge();
 createServer().listen(PORT, HOST, () => {
   console.log(`tablm gateway listening on http://${HOST}:${PORT}`);
   console.log(`use with: ANTHROPIC_BASE_URL=http://${HOST}:${PORT} ANTHROPIC_AUTH_TOKEN=tablm claude --model web-zai`);
+  console.log(`[mcp] MCP endpoint live at http://${HOST}:${PORT}/mcp`);
 });

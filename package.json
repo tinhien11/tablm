@@ -6,7 +6,8 @@
 "type": "module",
 "bin": {
 "tablm": "dist/index.js",
-"tablm-gateway": "dist/gateway.js"
+"tablm-gateway": "dist/gateway.js",
+    "tablm-mcp": "dist/gateway/mcp-server.js"
 },
 "files": [
 "dist",
