@@ -44,11 +44,11 @@ function resolveInCwd(p: string): string {
   return path.isAbsolute(p) ? p : path.resolve(MCP_CWD, p);
 }
 
-function execCommand(command: string): Promise<string> {
+function execCommand(command: string, cwd?: string): Promise<string> {
   return new Promise((resolve) => {
     execCb(
       command,
-      { cwd: MCP_CWD, timeout: MCP_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 },
+      { cwd: cwd ? resolveInCwd(cwd) : MCP_CWD, timeout: MCP_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 },
       (err, stdout, stderr) => {
         let out = "";
         if (stdout) out += stdout;
@@ -64,10 +64,13 @@ const MCP_TOOLS = [
   {
     name: "run_command",
     description:
-      "Run a shell command on the user's real machine (has gh authenticated to their Git host, private network access, and all local files). Working directory is the user's home. Returns stdout+stderr.",
+      "Run a shell command on the user's real machine (has gh authenticated to their Git hosts, private network access, and all local files). Use this for ANY shell/gh/git need - do NOT use your own python sandbox. Optional cwd sets the working directory. Returns stdout+stderr (capped ~20k chars).",
     inputSchema: {
       type: "object" as const,
-      properties: { command: { type: "string" } },
+      properties: {
+        command: { type: "string" },
+        cwd: { type: "string", description: "working directory (default: user's home)" },
+      },
       required: ["command"],
     },
   },
@@ -112,7 +115,10 @@ async function callTool(
   try {
     switch (name) {
       case "run_command":
-        return { text: await execCommand(String(args.command ?? "")), isError: false };
+        return {
+          text: await execCommand(String(args.command ?? ""), args.cwd ? String(args.cwd) : undefined),
+          isError: false,
+        };
       case "read_file": {
         const p = resolveInCwd(String(args.path ?? ""));
         return {
