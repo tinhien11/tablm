@@ -7,6 +7,7 @@
 // signature, so identical history never re-pastes.
 
 import { toolProtocol, toolReminder, contextHead } from "../protocol/contract.js";
+import { skillsIndexText } from "./skills.js";
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
@@ -55,7 +56,7 @@ function formatMessages(msgs: any[]): string {
 }
 
 export function buildFullPrompt(body: any, site = ""): string {
-  const head = contextHead(site);
+  const head = [contextHead(site), skillsIndexText()].filter(Boolean).join("\n\n");
   const parts: string[] = [];
   if (head) parts.push(head);
   const sys = body.system;
@@ -158,7 +159,7 @@ export function buildPrompt(body: any, key: string, site = ""): BuiltPrompt {
         prev.pasted <= rolloverChars()
       ) {
         if (hasTools && !prev.protocolSent) {
-          const out = `${contextHead(site)}\n\n[Tool use protocol]\n${toolProtocol(body.tools)}\n\n${text}`;
+          const out = `${[contextHead(site), skillsIndexText()].filter(Boolean).join("\n\n")}\n\n[Tool use protocol]\n${toolProtocol(body.tools)}\n\n${text}`;
           conv.set(key, { sigs, protocolSent: true, pasted: prev.pasted + out.length });
           console.log(`[gateway] ${key} tool protocol injected (delta)`);
           return { prompt: out, mode: "delta", hadConversation: true, rolloverDue: false, resync: false, firstTurn: false };

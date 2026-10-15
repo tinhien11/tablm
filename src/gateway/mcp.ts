@@ -15,6 +15,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import fs from "node:fs";
+import { listSkills, readSkillFile } from "./skills.js";
 
 // Token must be STABLE across restarts (ChatGPT's connector config holds it).
 // Resolution: env TABLM_MCP_TOKEN > persisted ~/.tablm/mcp-token > generated+saved.
@@ -98,6 +99,22 @@ const MCP_TOOLS = [
     },
   },
   {
+    name: "list_skills",
+    description:
+      "List the skill playbooks installed on the user's machine. When the task matches one, call read_skill with its name and follow the playbook.",
+    inputSchema: { type: "object" as const, properties: {}, required: [] },
+  },
+  {
+    name: "read_skill",
+    description:
+      "Read a skill playbook (markdown instructions) from the user's machine. Call list_skills first, then read the matching skill and follow it.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { name: { type: "string", description: "skill name from list_skills" } },
+      required: ["name"],
+    },
+  },
+  {
     name: "list_dir",
     description: "List entries of a directory on the user's real machine.",
     inputSchema: {
@@ -133,6 +150,20 @@ async function callTool(
           text: `wrote ${Buffer.byteLength(String(args.content ?? ""))} bytes to ${p}`,
           isError: false,
         };
+      }
+      case "list_skills": {
+        const skills = listSkills();
+        return {
+          text: skills.length
+            ? skills.map((s) => `${s.name}: ${s.description} (playbook: ${s.file})`).join("\n")
+            : "(no skills installed)",
+          isError: false,
+        };
+      }
+      case "read_skill": {
+        const content = readSkillFile(String(args.name ?? ""));
+        if (content === null) return { text: `[error] skill not found: ${args.name}`, isError: true };
+        return { text: content.slice(0, 20_000), isError: false };
       }
       case "list_dir": {
         const p = resolveInCwd(String(args.path ?? ""));
