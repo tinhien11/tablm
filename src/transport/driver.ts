@@ -455,8 +455,19 @@ export async function askSite(
       }
     }
     if (!result) throw lastErr ?? new Error("turn failed after re-attach");
-    if (result.status === "error" && reused && /composer not found/i.test(result.error ?? "")) {
+    // A full conversation refuses new messages: z.ai quietly fails the submit
+    // ("site did not accept the prompt") the same way a missing composer does.
+    // Either way: forget the conversation, start a fresh one - the gateway
+    // re-syncs the context on the next turn.
+    if (
+      result.status === "error" &&
+      reused &&
+      /composer not found|did not accept the prompt/i.test(result.error ?? "")
+    ) {
+      console.log(`[driver] ${siteId} conversation rejected the message - starting a fresh chat`);
+      delete sessions[key];
       await page.navigate(site.newChatUrl);
+      await waitForUrl(page, site.newChatUrl);
       result = await page.evalValue<TurnResult>(expression);
       reused = false;
     }

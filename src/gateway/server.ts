@@ -151,6 +151,7 @@ async function handleMessages(body: any, res: http.ServerResponse): Promise<void
       );
     } catch (e) {
       clearInterval(ping);
+      console.error(`[gateway] ${site} turn failed: ${e instanceof Error ? e.message : String(e)}`);
       const msg = e instanceof Error ? e.message : String(e);
       sse(res, "content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
       sse(res, "content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `[tablm error] ${msg}` } });
